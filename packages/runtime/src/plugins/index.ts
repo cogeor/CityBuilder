@@ -18,3 +18,6 @@ export {
   resolveDependencies,
   validateDependencies,
 } from "./loader.js";
+
+// Plugin validation pipeline
+export * from "./validators/index.js";
