@@ -1,17 +1,69 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TownBuilder</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; overflow: hidden; background: #1a1a2e; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', system-ui, sans-serif; }
+    #app { width: 100%; height: 100%; position: relative; }
     #game-canvas { width: 100%; height: 100%; display: block; }
+
+    /* Loading Screen */
+    #loading-screen {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #1a1a2e;
+      z-index: 1000;
+      transition: opacity 0.5s;
+    }
+    #loading-screen.hidden { opacity: 0; pointer-events: none; }
+    .loading-title { font-size: 48px; font-weight: 700; color: #4285f4; margin-bottom: 32px; }
+    .loading-subtitle { font-size: 16px; color: #808080; margin-bottom: 24px; }
+    .loading-bar-outer { width: 300px; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; }
+    .loading-bar-inner { height: 100%; background: #4285f4; border-radius: 2px; transition: width 0.3s; width: 0%; }
+    .loading-status { font-size: 13px; color: #606060; margin-top: 16px; }
+
+    /* Error Screen */
+    #error-screen {
+      position: fixed;
+      inset: 0;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #1a1a2e;
+      z-index: 1001;
+    }
+    #error-screen.visible { display: flex; }
+    .error-title { font-size: 24px; color: #f44336; margin-bottom: 16px; }
+    .error-message { font-size: 14px; color: #a0a0a0; max-width: 500px; text-align: center; }
   </style>
 </head>
 <body>
-  <canvas id="game-canvas"></canvas>
+  <div id="app">
+    <canvas id="game-canvas"></canvas>
+  </div>
+
+  <div id="loading-screen">
+    <div class="loading-title">TownBuilder</div>
+    <div class="loading-subtitle">Building your city...</div>
+    <div class="loading-bar-outer">
+      <div class="loading-bar-inner" id="loading-progress"></div>
+    </div>
+    <div class="loading-status" id="loading-status">Initializing...</div>
+  </div>
+
+  <div id="error-screen">
+    <div class="error-title">Something went wrong</div>
+    <div class="error-message" id="error-message"></div>
+  </div>
+
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
