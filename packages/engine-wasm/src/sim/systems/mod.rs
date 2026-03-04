@@ -15,4 +15,5 @@ pub mod system_template;
 pub mod transit;
 pub mod transport;
 pub mod utilities;
+pub mod vegetation;
 pub mod wealth_density;
