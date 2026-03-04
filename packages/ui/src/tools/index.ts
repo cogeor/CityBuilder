@@ -7,6 +7,7 @@ export {
   type ValidateCallback,
   type CostCallback,
   type ToolEventType,
+  type ToolEventPayloads,
   type ToolEventHandler,
   ToolManager,
 } from './tool_manager.js';

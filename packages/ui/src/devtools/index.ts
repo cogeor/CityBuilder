@@ -5,6 +5,7 @@ export {
   type CacheStats,
   type PhaseWheelStatus,
   type DevToolsEventType,
+  type DevToolsEventPayloads,
   type DevToolsEventHandler,
   type ConsoleEntry,
   DevTools,

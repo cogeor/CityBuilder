@@ -1,0 +1,4 @@
+loops:
+  - id: 01
+    summary: "TS-wide typed contracts + plugin versioning unification + boundary cleanup"
+    status: in_progress

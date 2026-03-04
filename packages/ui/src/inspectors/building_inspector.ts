@@ -1,3 +1,5 @@
+import { TypedEventHub, type EventListener } from "../shared/typed_events.js";
+
 /** Building info data */
 export interface BuildingInfo {
   entityId: number;
@@ -70,7 +72,15 @@ export enum InspectorType {
 
 /** Inspector event types */
 export type InspectorEventType = 'open' | 'close' | 'pin' | 'unpin' | 'upgrade' | 'demolish';
-export type InspectorEventHandler = (type: InspectorEventType, data: any) => void;
+export interface InspectorEventPayloads {
+  open: { type: InspectorType; info: BuildingInfo | TileInfo | DistrictInfo };
+  close: {};
+  pin: {};
+  unpin: {};
+  upgrade: { entityId: number };
+  demolish: { entityId: number };
+}
+export type InspectorEventHandler = EventListener<InspectorEventPayloads>;
 
 /**
  * InspectorManager — manages building/tile/district inspectors.
@@ -85,7 +95,7 @@ export class InspectorManager {
   private tileInfo: TileInfo | null;
   private districtInfo: DistrictInfo | null;
   private pinned: boolean;
-  private eventHandlers: InspectorEventHandler[];
+  private readonly events: TypedEventHub<InspectorEventPayloads>;
 
   constructor() {
     this.activeType = InspectorType.None;
@@ -93,7 +103,7 @@ export class InspectorManager {
     this.tileInfo = null;
     this.districtInfo = null;
     this.pinned = false;
-    this.eventHandlers = [];
+    this.events = new TypedEventHub<InspectorEventPayloads>();
   }
 
   // --- Getters ---
@@ -225,17 +235,14 @@ export class InspectorManager {
 
   // --- Events ---
   addEventListener(handler: InspectorEventHandler): void {
-    this.eventHandlers.push(handler);
+    this.events.on(handler);
   }
 
   removeEventListener(handler: InspectorEventHandler): void {
-    const idx = this.eventHandlers.indexOf(handler);
-    if (idx >= 0) this.eventHandlers.splice(idx, 1);
+    this.events.off(handler);
   }
 
-  private emit(type: InspectorEventType, data: any): void {
-    for (const handler of this.eventHandlers) {
-      handler(type, data);
-    }
+  private emit<K extends InspectorEventType>(type: K, data: InspectorEventPayloads[K]): void {
+    this.events.emit(type, data);
   }
 }

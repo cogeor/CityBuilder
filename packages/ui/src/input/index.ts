@@ -3,6 +3,7 @@ export {
   type KeyBindings,
   type CameraLimits,
   type CameraEventType,
+  type CameraEventPayloads,
   type CameraEventHandler,
   DEFAULT_KEY_BINDINGS,
   DEFAULT_CAMERA_LIMITS,

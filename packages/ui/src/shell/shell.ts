@@ -1,3 +1,5 @@
+import { TypedEventHub, type EventListener } from "../shared/typed_events.js";
+
 /** Simulation speed levels */
 export enum SimSpeed {
   Paused = 0,
@@ -48,8 +50,15 @@ export type ShellEventType =
   | 'panelToggle'
   | 'notificationDismiss';
 
+export interface ShellEventPayloads {
+  speedChange: { speed: SimSpeed };
+  toolChange: { tool: ToolType };
+  panelToggle: { id: string; visible: boolean };
+  notificationDismiss: { id: number };
+}
+
 /** Shell event handler */
-export type ShellEventHandler = (type: ShellEventType, data: any) => void;
+export type ShellEventHandler = EventListener<ShellEventPayloads>;
 
 /** Default city stats */
 export const DEFAULT_CITY_STATS: CityStats = {
@@ -81,7 +90,7 @@ export class HudShell {
   private panels: Map<string, PanelState>;
   private notifications: Notification[];
   private nextNotificationId: number;
-  private eventHandlers: ShellEventHandler[];
+  private readonly events: TypedEventHub<ShellEventPayloads>;
   private maxNotifications: number;
 
   constructor(initialStats?: Partial<CityStats>) {
@@ -91,7 +100,7 @@ export class HudShell {
     this.panels = new Map();
     this.notifications = [];
     this.nextNotificationId = 1;
-    this.eventHandlers = [];
+    this.events = new TypedEventHub<ShellEventPayloads>();
     this.maxNotifications = 10;
   }
 
@@ -233,17 +242,14 @@ export class HudShell {
 
   // --- Events ---
   addEventListener(handler: ShellEventHandler): void {
-    this.eventHandlers.push(handler);
+    this.events.on(handler);
   }
 
   removeEventListener(handler: ShellEventHandler): void {
-    const idx = this.eventHandlers.indexOf(handler);
-    if (idx >= 0) this.eventHandlers.splice(idx, 1);
+    this.events.off(handler);
   }
 
-  private emit(type: ShellEventType, data: any): void {
-    for (const handler of this.eventHandlers) {
-      handler(type, data);
-    }
+  private emit<K extends ShellEventType>(type: K, data: ShellEventPayloads[K]): void {
+    this.events.emit(type, data);
   }
 }

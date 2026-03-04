@@ -6,6 +6,7 @@ export {
   type MinimapConfig,
   type MinimapViewport,
   type OverlayPanelEventType,
+  type OverlayPanelEventPayloads,
   type OverlayPanelEventHandler,
   OVERLAY_BUTTONS,
   OVERLAY_LEGENDS,

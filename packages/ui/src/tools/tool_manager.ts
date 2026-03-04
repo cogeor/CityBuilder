@@ -1,4 +1,5 @@
 import { ToolType } from '../shell/shell.js';
+import { TypedEventHub, type EventListener } from '../shared/typed_events.js';
 
 /** Tool state for the active tool */
 export enum ToolState {
@@ -54,7 +55,12 @@ export type CostCallback = (command: ToolCommand) => number;
 
 /** Tool event types */
 export type ToolEventType = 'commandGenerated' | 'stateChanged' | 'previewUpdated';
-export type ToolEventHandler = (type: ToolEventType, data: any) => void;
+export interface ToolEventPayloads {
+  commandGenerated: { command: ToolCommand };
+  stateChanged: { state: ToolState };
+  previewUpdated: { tiles: TileCoord[]; validity: PlacementValidity };
+}
+export type ToolEventHandler = EventListener<ToolEventPayloads>;
 
 /**
  * ToolManager -- state machine for all building/zoning tools.
@@ -77,7 +83,7 @@ export class ToolManager {
   private previewValidity: PlacementValidity;
   private validateFn: ValidateCallback | null;
   private costFn: CostCallback | null;
-  private eventHandlers: ToolEventHandler[];
+  private readonly events: TypedEventHub<ToolEventPayloads>;
 
   constructor() {
     this.activeTool = ToolType.Select;
@@ -91,7 +97,7 @@ export class ToolManager {
     this.previewValidity = PlacementValidity.Valid;
     this.validateFn = null;
     this.costFn = null;
-    this.eventHandlers = [];
+    this.events = new TypedEventHub<ToolEventPayloads>();
   }
 
   // --- Getters ---
@@ -108,11 +114,8 @@ export class ToolManager {
   // --- Configuration ---
   setValidateCallback(fn: ValidateCallback): void { this.validateFn = fn; }
   setCostCallback(fn: CostCallback): void { this.costFn = fn; }
-  addEventListener(handler: ToolEventHandler): void { this.eventHandlers.push(handler); }
-  removeEventListener(handler: ToolEventHandler): void {
-    const idx = this.eventHandlers.indexOf(handler);
-    if (idx >= 0) this.eventHandlers.splice(idx, 1);
-  }
+  addEventListener(handler: ToolEventHandler): void { this.events.on(handler); }
+  removeEventListener(handler: ToolEventHandler): void { this.events.off(handler); }
 
   // --- Tool Selection ---
   setTool(tool: ToolType, archetypeId?: number, zoneType?: number, roadType?: number): void {
@@ -304,9 +307,7 @@ export class ToolManager {
     this.emit('stateChanged', { state: this.state });
   }
 
-  private emit(type: ToolEventType, data: any): void {
-    for (const handler of this.eventHandlers) {
-      handler(type, data);
-    }
+  private emit<K extends ToolEventType>(type: K, data: ToolEventPayloads[K]): void {
+    this.events.emit(type, data);
   }
 }

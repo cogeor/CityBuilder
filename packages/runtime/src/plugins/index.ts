@@ -2,9 +2,13 @@
 export {
   // Types
   type PluginContentType,
+  type PluginRuntimeKind,
   type PluginActivation,
+  type PluginManifestSchemaVersion,
+  type PluginManifestSourceFormat,
   type PluginManifest,
   type PluginEntry,
+  normalizeManifest,
 
   // Validation
   validateManifest,
@@ -19,16 +23,13 @@ export {
   validateDependencies,
 } from "./loader.js";
 
-// Plugin manifest v2 — extended content types
+// Plugin host abstraction
 export {
-  ContentType,
-  type ManifestV1,
-  type ManifestV2,
-  type PluginManifestAny,
-  isManifestV2,
-  migrateV1toV2,
-  validateManifestV2,
-} from "./manifest_v2.js";
+  type IPluginSource,
+  type PluginActivationReport,
+  PluginHost,
+  InMemoryPluginSource,
+} from "./host.js";
 
 // Plugin capability model
 export {

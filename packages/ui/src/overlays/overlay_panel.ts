@@ -1,3 +1,5 @@
+import { TypedEventHub, type EventListener } from "../shared/typed_events.js";
+
 /** Overlay type identifiers (mirrors renderer OverlayType) */
 export enum UIOverlayType {
   None = 0,
@@ -53,7 +55,11 @@ export interface MinimapViewport {
 
 /** Overlay panel events */
 export type OverlayPanelEventType = 'overlayChanged' | 'minimapClick';
-export type OverlayPanelEventHandler = (type: OverlayPanelEventType, data: any) => void;
+export interface OverlayPanelEventPayloads {
+  overlayChanged: { overlay: UIOverlayType };
+  minimapClick: { tileX: number; tileY: number };
+}
+export type OverlayPanelEventHandler = EventListener<OverlayPanelEventPayloads>;
 
 /** Built-in overlay button definitions */
 export const OVERLAY_BUTTONS: OverlayButton[] = [
@@ -116,7 +122,7 @@ export class OverlayPanel {
   private buttons: OverlayButton[];
   private minimapConfig: MinimapConfig;
   private minimapViewport: MinimapViewport;
-  private eventHandlers: OverlayPanelEventHandler[];
+  private readonly events: TypedEventHub<OverlayPanelEventPayloads>;
 
   constructor(minimapConfig?: Partial<MinimapConfig>) {
     this.activeOverlay = UIOverlayType.None;
@@ -129,7 +135,7 @@ export class OverlayPanel {
       ...minimapConfig,
     };
     this.minimapViewport = { x: 128, y: 128, viewW: 30, viewH: 20 };
-    this.eventHandlers = [];
+    this.events = new TypedEventHub<OverlayPanelEventPayloads>();
   }
 
   // --- Overlay ---
@@ -206,13 +212,12 @@ export class OverlayPanel {
 
   // --- Events ---
   addEventListener(handler: OverlayPanelEventHandler): void {
-    this.eventHandlers.push(handler);
+    this.events.on(handler);
   }
   removeEventListener(handler: OverlayPanelEventHandler): void {
-    const idx = this.eventHandlers.indexOf(handler);
-    if (idx >= 0) this.eventHandlers.splice(idx, 1);
+    this.events.off(handler);
   }
-  private emit(type: OverlayPanelEventType, data: any): void {
-    for (const handler of this.eventHandlers) handler(type, data);
+  private emit<K extends OverlayPanelEventType>(type: K, data: OverlayPanelEventPayloads[K]): void {
+    this.events.emit(type, data);
   }
 }

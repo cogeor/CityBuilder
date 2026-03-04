@@ -1,3 +1,5 @@
+import { TypedEventHub, type EventListener } from "../shared/typed_events.js";
+
 /** Tax category */
 export enum TaxCategory {
   Residential = 'residential',
@@ -50,7 +52,12 @@ export enum BudgetViewMode {
 
 /** Budget change event */
 export type BudgetEventType = 'taxRateChanged' | 'budgetChanged' | 'viewModeChanged';
-export type BudgetEventHandler = (type: BudgetEventType, data: any) => void;
+export interface BudgetEventPayloads {
+  taxRateChanged: { category: TaxCategory; rate: number };
+  budgetChanged: { department: ExpenseDepartment; budget: number };
+  viewModeChanged: { mode: BudgetViewMode };
+}
+export type BudgetEventHandler = EventListener<BudgetEventPayloads>;
 
 /**
  * BudgetPanel — manages income/expense display and tax/budget controls.
@@ -62,7 +69,7 @@ export class BudgetPanel {
   private maxHistory: number;
   private currentTreasury: number;
   private viewMode: BudgetViewMode;
-  private eventHandlers: BudgetEventHandler[];
+  private readonly events: TypedEventHub<BudgetEventPayloads>;
 
   constructor() {
     this.incomeItems = new Map();
@@ -71,7 +78,7 @@ export class BudgetPanel {
     this.maxHistory = 24; // 2 years of monthly data
     this.currentTreasury = 0;
     this.viewMode = BudgetViewMode.Monthly;
-    this.eventHandlers = [];
+    this.events = new TypedEventHub<BudgetEventPayloads>();
 
     // Initialize with defaults
     this.initDefaults();
@@ -227,13 +234,12 @@ export class BudgetPanel {
 
   // --- Events ---
   addEventListener(handler: BudgetEventHandler): void {
-    this.eventHandlers.push(handler);
+    this.events.on(handler);
   }
   removeEventListener(handler: BudgetEventHandler): void {
-    const idx = this.eventHandlers.indexOf(handler);
-    if (idx >= 0) this.eventHandlers.splice(idx, 1);
+    this.events.off(handler);
   }
-  private emit(type: BudgetEventType, data: any): void {
-    for (const handler of this.eventHandlers) handler(type, data);
+  private emit<K extends BudgetEventType>(type: K, data: BudgetEventPayloads[K]): void {
+    this.events.emit(type, data);
   }
 }

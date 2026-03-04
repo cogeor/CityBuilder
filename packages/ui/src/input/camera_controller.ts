@@ -1,3 +1,5 @@
+import { TypedEventHub, type EventListener } from "../shared/typed_events.js";
+
 /** Camera state (matches renderer CameraState) */
 export interface CameraState {
   x: number;         // center X in tile coords
@@ -39,7 +41,13 @@ export interface CameraLimits {
 
 /** Camera event types */
 export type CameraEventType = 'cameraChanged' | 'speedChange' | 'click' | 'rightClick';
-export type CameraEventHandler = (type: CameraEventType, data: any) => void;
+export interface CameraEventPayloads {
+  cameraChanged: CameraState;
+  speedChange: { speed: number };
+  click: { screenX: number; screenY: number };
+  rightClick: { screenX: number; screenY: number };
+}
+export type CameraEventHandler = EventListener<CameraEventPayloads>;
 
 export const DEFAULT_KEY_BINDINGS: KeyBindings = {
   panUp: ['w', 'ArrowUp'],
@@ -82,7 +90,7 @@ export class CameraController {
   private dragStartY: number;
   private dragCameraStartX: number;
   private dragCameraStartY: number;
-  private eventHandlers: CameraEventHandler[];
+  private readonly events: TypedEventHub<CameraEventPayloads>;
   private edgeScrollEnabled: boolean;
 
   constructor(
@@ -111,7 +119,7 @@ export class CameraController {
     this.dragStartY = 0;
     this.dragCameraStartX = 0;
     this.dragCameraStartY = 0;
-    this.eventHandlers = [];
+    this.events = new TypedEventHub<CameraEventPayloads>();
     this.edgeScrollEnabled = true;
   }
 
@@ -289,15 +297,14 @@ export class CameraController {
 
   // --- Events ---
   addEventListener(handler: CameraEventHandler): void {
-    this.eventHandlers.push(handler);
+    this.events.on(handler);
   }
 
   removeEventListener(handler: CameraEventHandler): void {
-    const idx = this.eventHandlers.indexOf(handler);
-    if (idx >= 0) this.eventHandlers.splice(idx, 1);
+    this.events.off(handler);
   }
 
-  private emit(type: CameraEventType, data: any): void {
-    for (const handler of this.eventHandlers) handler(type, data);
+  private emit<K extends CameraEventType>(type: K, data: CameraEventPayloads[K]): void {
+    this.events.emit(type, data);
   }
 }

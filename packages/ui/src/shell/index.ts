@@ -5,6 +5,7 @@ export {
   type Notification,
   type PanelState,
   type ShellEventType,
+  type ShellEventPayloads,
   type ShellEventHandler,
   DEFAULT_CITY_STATS,
   HudShell,

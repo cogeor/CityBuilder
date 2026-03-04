@@ -1,7 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   validateManifest,
+  normalizeManifest,
   PluginRegistry,
+  PluginHost,
+  InMemoryPluginSource,
   resolveDependencies,
   validateDependencies,
   type PluginManifest,
@@ -12,6 +15,8 @@ import {
 /** Create a minimal valid manifest, optionally overriding fields. */
 function makeManifest(overrides: Partial<PluginManifest> = {}): PluginManifest {
   return {
+    schema_version: "v1",
+    source_format: "canonical_v1",
     id: "test.plugin",
     name: "Test Plugin",
     version: "1.0.0",
@@ -19,8 +24,8 @@ function makeManifest(overrides: Partial<PluginManifest> = {}): PluginManifest {
     author: "Test Author",
     dependencies: [],
     activation: "onWorldLoad",
-    content_type: "buildings",
-    data_path: "data/buildings.json",
+    runtime: "data",
+    contributes: { buildings: ["data/buildings.json"] },
     ...overrides,
   };
 }
@@ -75,6 +80,10 @@ describe("validateManifest", () => {
     expect(validateManifest(rest)).toBe(false);
   });
 
+  it("rejects non-semver versions", () => {
+    expect(validateManifest(makeManifest({ version: "latest" }))).toBe(false);
+  });
+
   it("rejects manifest with invalid content_type", () => {
     expect(
       validateManifest(makeManifest({ content_type: "invalid" as any })),
@@ -97,6 +106,56 @@ describe("validateManifest", () => {
     expect(
       validateManifest(makeManifest({ dependencies: [42] as any })),
     ).toBe(false);
+  });
+});
+
+// ---- normalizeManifest ----
+
+describe("normalizeManifest", () => {
+  it("normalizes legacy manifest shape", () => {
+    const normalized = normalizeManifest({
+      id: "legacy.a",
+      name: "Legacy A",
+      version: "1.2.3",
+      dependencies: [],
+      activation: "onWorldLoad",
+      content_type: "economy",
+      data_path: "data/econ.json",
+    });
+    expect(normalized).not.toBeNull();
+    expect(normalized!.id).toBe("legacy.a");
+    expect(normalized!.contributes.economy).toEqual(["data/econ.json"]);
+    expect(normalized!.runtime).toBe("data");
+    expect(normalized!.schema_version).toBe("v1");
+    expect(normalized!.source_format).toBe("legacy_v1");
+  });
+
+  it("normalizes plugin_id/plugin_version fields", () => {
+    const normalized = normalizeManifest({
+      plugin_id: "pack.city",
+      plugin_version: "1.0.0",
+      name: "Pack City",
+      dependencies: [],
+      provides: ["archetypes"],
+      archetypes: ["archetypes/small_house.json"],
+    });
+    expect(normalized).not.toBeNull();
+    expect(normalized!.id).toBe("pack.city");
+    expect(normalized!.version).toBe("1.0.0");
+    expect(normalized!.contributes.buildings).toEqual(["archetypes/small_house.json"]);
+    expect(normalized!.source_format).toBe("legacy_v1");
+  });
+
+  it("marks non-legacy shapes as custom source format", () => {
+    const normalized = normalizeManifest({
+      id: "custom.pack",
+      name: "Custom Pack",
+      version: "1.0.0",
+      contentTypes: ["buildings", "terrain"],
+    });
+    expect(normalized).not.toBeNull();
+    expect(normalized!.schema_version).toBe("v1");
+    expect(normalized!.source_format).toBe("custom");
   });
 });
 
@@ -144,10 +203,10 @@ describe("PluginRegistry", () => {
 
   it("lists plugins filtered by content type", () => {
     const registry = new PluginRegistry();
-    registry.register(makeManifest({ id: "a", content_type: "buildings" }));
-    registry.register(makeManifest({ id: "b", content_type: "terrain" }));
-    registry.register(makeManifest({ id: "c", content_type: "buildings" }));
-    registry.register(makeManifest({ id: "d", content_type: "economy" }));
+    registry.register(makeManifest({ id: "a", contributes: { buildings: ["a.json"] } }));
+    registry.register(makeManifest({ id: "b", contributes: { terrain: ["b.json"] } }));
+    registry.register(makeManifest({ id: "c", contributes: { buildings: ["c.json"] } }));
+    registry.register(makeManifest({ id: "d", contributes: { economy: ["d.json"] } }));
 
     const buildings = registry.listByType("buildings");
     expect(buildings).toHaveLength(2);
@@ -183,9 +242,7 @@ describe("PluginRegistry", () => {
     expect(registry.isLoaded("plugin.a")).toBe(false);
     expect(registry.isLoaded("nonexistent")).toBe(false);
 
-    // Simulate loading
-    const entry = registry.get("plugin.a")!;
-    entry.loaded = true;
+    registry.setLoaded("plugin.a", { sample: true });
     expect(registry.isLoaded("plugin.a")).toBe(true);
   });
 
@@ -201,6 +258,34 @@ describe("PluginRegistry", () => {
 
     registry.unregister("a");
     expect(registry.count()).toBe(1);
+  });
+});
+
+// ---- PluginHost ----
+
+describe("PluginHost", () => {
+  it("discovers/registers then activates plugins in dependency order", async () => {
+    const source = new InMemoryPluginSource(
+      [
+        makeManifest({ id: "base.world", dependencies: [] }),
+        makeManifest({ id: "base.economy", dependencies: ["base.world"] }),
+      ],
+      {
+        "base.world": { world: true },
+        "base.economy": { economy: true },
+      },
+    );
+
+    const host = new PluginHost();
+    const discovery = await host.discoverAndRegister(source);
+    expect(discovery.errors).toEqual([]);
+    expect(discovery.registered).toEqual(["base.world", "base.economy"]);
+
+    const activation = await host.activateAll(source);
+    expect(activation.errors).toEqual([]);
+    expect(activation.activated).toEqual(["base.world", "base.economy"]);
+    expect(host.getRegistry().isLoaded("base.world")).toBe(true);
+    expect(host.getRegistry().isLoaded("base.economy")).toBe(true);
   });
 });
 

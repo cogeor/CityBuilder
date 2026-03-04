@@ -1,3 +1,5 @@
+import { TypedEventHub, type EventListener } from "../shared/typed_events.js";
+
 /** Performance metrics */
 export interface PerformanceMetrics {
   fps: number;
@@ -51,7 +53,12 @@ export enum DevPanel {
 
 /** Dev tools event types */
 export type DevToolsEventType = 'toggle' | 'panelChanged' | 'command';
-export type DevToolsEventHandler = (type: DevToolsEventType, data: any) => void;
+export interface DevToolsEventPayloads {
+  toggle: { visible: boolean };
+  panelChanged: { panel: DevPanel };
+  command: { command: string };
+}
+export type DevToolsEventHandler = EventListener<DevToolsEventPayloads>;
 
 /** Console log entry */
 export interface ConsoleEntry {
@@ -72,10 +79,10 @@ export class DevTools {
   private cacheStats: CacheStats;
   private phaseStatus: PhaseWheelStatus;
   private inspectedEntity: EntityDebugInfo | null;
-  private inspectedTile: { x: number; y: number; data: Record<string, any> } | null;
+  private inspectedTile: { x: number; y: number; data: Record<string, unknown> } | null;
   private consoleLog: ConsoleEntry[];
   private maxConsoleEntries: number;
-  private eventHandlers: DevToolsEventHandler[];
+  private readonly events: TypedEventHub<DevToolsEventPayloads>;
   private fpsHistory: number[];
   private maxFpsHistory: number;
 
@@ -98,7 +105,7 @@ export class DevTools {
     this.inspectedTile = null;
     this.consoleLog = [];
     this.maxConsoleEntries = 200;
-    this.eventHandlers = [];
+    this.events = new TypedEventHub<DevToolsEventPayloads>();
     this.fpsHistory = [];
     this.maxFpsHistory = 120; // 2 seconds at 60fps
   }
@@ -188,11 +195,11 @@ export class DevTools {
   }
 
   // --- Tile Inspector ---
-  inspectTile(x: number, y: number, data: Record<string, any>): void {
+  inspectTile(x: number, y: number, data: Record<string, unknown>): void {
     this.inspectedTile = { x, y, data: { ...data } };
   }
 
-  getInspectedTile(): { x: number; y: number; data: Record<string, any> } | null {
+  getInspectedTile(): { x: number; y: number; data: Record<string, unknown> } | null {
     return this.inspectedTile ? { ...this.inspectedTile, data: { ...this.inspectedTile.data } } : null;
   }
 
@@ -259,13 +266,12 @@ export class DevTools {
 
   // --- Events ---
   addEventListener(handler: DevToolsEventHandler): void {
-    this.eventHandlers.push(handler);
+    this.events.on(handler);
   }
   removeEventListener(handler: DevToolsEventHandler): void {
-    const idx = this.eventHandlers.indexOf(handler);
-    if (idx >= 0) this.eventHandlers.splice(idx, 1);
+    this.events.off(handler);
   }
-  private emit(type: DevToolsEventType, data: any): void {
-    for (const handler of this.eventHandlers) handler(type, data);
+  private emit<K extends DevToolsEventType>(type: K, data: DevToolsEventPayloads[K]): void {
+    this.events.emit(type, data);
   }
 }

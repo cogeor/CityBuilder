@@ -3,7 +3,7 @@
 // SaveManager, PluginRegistry, and CommandHistory subsystems.
 
 import { CommandHistory, type CommandRecord } from "./history/command_history.js";
-import { PluginRegistry } from "./plugins/loader.js";
+import { PluginHost, PluginRegistry } from "./plugins/index.js";
 import type { EngineCommand } from "./engine/commands.js";
 import {
   SaveManager,
@@ -12,7 +12,7 @@ import {
 } from "./saves/save_manager.js";
 import { WorkerManager, type IWorkerManager } from "./messaging/worker_manager.js";
 
-function getCommandKind(command: EngineCommand): string {
+function getCommandKind(command: Readonly<EngineCommand>): string {
   const keys = Object.keys(command);
   return keys.length > 0 ? keys[0] : "Unknown";
 }
@@ -59,6 +59,7 @@ export class RuntimeFacade {
   private readonly _config: RuntimeConfig;
   private readonly _commandHistory: CommandHistory;
   private readonly _pluginRegistry: PluginRegistry;
+  private readonly _pluginHost: PluginHost;
   private readonly _saveManager: SaveManager;
   private _workerManager: IWorkerManager | null = null;
   private _commandSequence: number = 0;
@@ -72,6 +73,7 @@ export class RuntimeFacade {
     });
 
     this._pluginRegistry = new PluginRegistry();
+    this._pluginHost = new PluginHost(this._pluginRegistry);
 
     // Use in-memory storage by default; callers can provide custom storage
     // by extending or replacing the SaveManager after construction.
@@ -184,7 +186,7 @@ export class RuntimeFacade {
    * Records the command in history and forwards it to the sim worker.
    * Throws if the runtime is not in the Running state.
    */
-  sendCommand(command: EngineCommand): void {
+  sendCommand(command: Readonly<EngineCommand>): void {
     if (this._state !== RuntimeState.Running) {
       throw new Error(
         `Cannot send command: runtime is in state "${this._state}", expected "${RuntimeState.Running}"`,
@@ -293,6 +295,11 @@ export class RuntimeFacade {
   /** Return the PluginRegistry instance. */
   getPluginRegistry(): PluginRegistry {
     return this._pluginRegistry;
+  }
+
+  /** Return the PluginHost abstraction for discovery/load orchestration. */
+  getPluginHost(): PluginHost {
+    return this._pluginHost;
   }
 
   /** Return the SaveManager instance. */

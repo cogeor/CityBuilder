@@ -4,6 +4,7 @@ export {
   type TileInfo,
   type DistrictInfo,
   type InspectorEventType,
+  type InspectorEventPayloads,
   type InspectorEventHandler,
   InspectorManager,
 } from './building_inspector.js';
@@ -16,6 +17,7 @@ export {
   type ExpenseItem,
   type BudgetSnapshot,
   type BudgetEventType,
+  type BudgetEventPayloads,
   type BudgetEventHandler,
   BudgetPanel,
 } from './budget_panel.js';
