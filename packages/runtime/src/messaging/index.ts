@@ -49,3 +49,6 @@ export {
   type WorkerManagerState,
   type IWorkerManager,
 } from "./worker_manager.js";
+
+// Event hub — observer-pattern subscriptions
+export { EventHub, type EventSubscription } from "./event_hub.js";
