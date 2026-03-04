@@ -2,4 +2,5 @@
 
 pub mod fixed;
 pub mod rng;
+pub mod simd;
 pub mod time;
