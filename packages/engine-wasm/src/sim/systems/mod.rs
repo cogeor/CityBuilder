@@ -1,10 +1,12 @@
 //! Simulation systems — per-tick logic for city mechanics.
 
 pub mod city_events;
+pub mod commute_happiness;
 pub mod construction;
 pub mod education;
 pub mod finance;
 pub mod jobs;
+pub mod land_value;
 pub mod population;
 pub mod system_template;
 pub mod transport;
