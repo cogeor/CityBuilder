@@ -1,0 +1,143 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ─── Rust Tests ────────────────────────────────────────────
+  rust:
+    name: Rust Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/engine-wasm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            packages/engine-wasm/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('packages/engine-wasm/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Check formatting
+        run: cargo fmt --check
+
+      - name: Run clippy
+        run: cargo clippy -- -D warnings
+
+      - name: Run unit tests
+        run: cargo test --lib
+
+      - name: Run integration tests
+        run: cargo test --test integration
+
+  # ─── TypeScript Tests ──────────────────────────────────────
+  typescript:
+    name: TypeScript Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm run typecheck
+
+      - name: Run tests
+        run: pnpm run test
+
+  # ─── WASM Build ────────────────────────────────────────────
+  wasm-build:
+    name: WASM Build
+    runs-on: ubuntu-latest
+    needs: [rust]
+    defaults:
+      run:
+        working-directory: packages/engine-wasm
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Build WASM
+        run: wasm-pack build --target web --out-dir pkg
+
+      - name: Upload WASM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: engine-wasm
+          path: packages/engine-wasm/pkg/
+          retention-days: 7
+
+  # ─── Web Build ─────────────────────────────────────────────
+  web-build:
+    name: Web Build
+    runs-on: ubuntu-latest
+    needs: [typescript, wasm-build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download WASM artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: engine-wasm
+          path: packages/engine-wasm/pkg/
+
+      - name: Build web bundle
+        run: pnpm run build
+
+      - name: Upload web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-bundle
+          path: web/dist/
+          retention-days: 7
