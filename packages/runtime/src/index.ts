@@ -14,3 +14,6 @@ export * from "./saves/index.js";
 
 // Undo/redo history
 export * from "./history/index.js";
+
+// Runtime orchestration facade
+export { RuntimeFacade, RuntimeState, type RuntimeConfig } from "./runtime_facade.js";
