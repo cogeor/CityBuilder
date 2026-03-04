@@ -1,0 +1,30 @@
+{
+  "id": 300,
+  "name": "Hospital",
+  "tags": ["civic", "health"],
+  "footprint": { "w": 5, "h": 5 },
+  "coverageRatio": 0.6,
+  "floors": 4,
+  "usableRatio": 0.75,
+  "baseCost": 500000,
+  "baseUpkeepPerTick": 25,
+  "powerDemand": 50,
+  "powerSupply": 0,
+  "waterDemand": 20,
+  "waterSupply": 0,
+  "serviceRadius": 30,
+  "desirabilityRadius": 5,
+  "desirabilityMagnitude": 3,
+  "pollution": 0,
+  "noise": 5,
+  "buildTimeTicks": 1500,
+  "maxLevel": 3,
+  "prerequisites": [],
+  "livingSpacePerPerson": 0,
+  "workspacePerJob": 15,
+  "levelScaling": {
+    "costMultiplier": [1.0, 2.0, 4.0],
+    "capacityMultiplier": [1.0, 2.0, 3.5],
+    "upkeepMultiplier": [1.0, 1.8, 3.0]
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "id": 400,
+  "name": "Corner Shop",
+  "tags": ["commercial"],
+  "footprint": { "w": 1, "h": 2 },
+  "coverageRatio": 0.8,
+  "floors": 1,
+  "usableRatio": 0.85,
+  "baseCost": 25000,
+  "baseUpkeepPerTick": 3,
+  "powerDemand": 8,
+  "powerSupply": 0,
+  "waterDemand": 3,
+  "waterSupply": 0,
+  "serviceRadius": 10,
+  "desirabilityRadius": 3,
+  "desirabilityMagnitude": 2,
+  "pollution": 1,
+  "noise": 3,
+  "buildTimeTicks": 300,
+  "maxLevel": 3,
+  "prerequisites": [],
+  "livingSpacePerPerson": 0,
+  "workspacePerJob": 20,
+  "levelScaling": {
+    "costMultiplier": [1.0, 1.5, 2.5],
+    "capacityMultiplier": [1.0, 2.0, 3.0],
+    "upkeepMultiplier": [1.0, 1.4, 2.0]
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "id": "base.buildings",
+  "name": "Base Buildings",
+  "version": "1.0.0",
+  "description": "Core building types for the city builder",
+  "author": "TownBuilder",
+  "dependencies": [],
+  "activation": "onWorldLoad",
+  "provides": ["archetypes"],
+  "archetypes": [
+    "archetypes/small_house.json",
+    "archetypes/power_plant.json",
+    "archetypes/hospital.json",
+    "archetypes/shop.json",
+    "archetypes/school.json"
+  ]
+}

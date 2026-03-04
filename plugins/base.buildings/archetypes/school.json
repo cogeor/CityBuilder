@@ -1,0 +1,30 @@
+{
+  "id": 500,
+  "name": "Elementary School",
+  "tags": ["civic", "education"],
+  "footprint": { "w": 2, "h": 3 },
+  "coverageRatio": 0.5,
+  "floors": 2,
+  "usableRatio": 0.7,
+  "baseCost": 200000,
+  "baseUpkeepPerTick": 12,
+  "powerDemand": 20,
+  "powerSupply": 0,
+  "waterDemand": 8,
+  "waterSupply": 0,
+  "serviceRadius": 20,
+  "desirabilityRadius": 4,
+  "desirabilityMagnitude": 4,
+  "pollution": 0,
+  "noise": 10,
+  "buildTimeTicks": 800,
+  "maxLevel": 3,
+  "prerequisites": [],
+  "livingSpacePerPerson": 0,
+  "workspacePerJob": 20,
+  "levelScaling": {
+    "costMultiplier": [1.0, 1.8, 3.0],
+    "capacityMultiplier": [1.0, 1.5, 2.5],
+    "upkeepMultiplier": [1.0, 1.5, 2.2]
+  }
+}

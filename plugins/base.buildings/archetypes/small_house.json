@@ -1,0 +1,30 @@
+{
+  "id": 100,
+  "name": "Small House",
+  "tags": ["residential"],
+  "footprint": { "w": 1, "h": 1 },
+  "coverageRatio": 0.5,
+  "floors": 2,
+  "usableRatio": 0.8,
+  "baseCost": 15000,
+  "baseUpkeepPerTick": 1,
+  "powerDemand": 5,
+  "powerSupply": 0,
+  "waterDemand": 2,
+  "waterSupply": 0,
+  "serviceRadius": 0,
+  "desirabilityRadius": 2,
+  "desirabilityMagnitude": 1,
+  "pollution": 0,
+  "noise": 1,
+  "buildTimeTicks": 200,
+  "maxLevel": 3,
+  "prerequisites": [],
+  "livingSpacePerPerson": 40,
+  "workspacePerJob": 0,
+  "levelScaling": {
+    "costMultiplier": [1.0, 1.5, 2.0],
+    "capacityMultiplier": [1.0, 1.5, 2.5],
+    "upkeepMultiplier": [1.0, 1.3, 1.8]
+  }
+}
