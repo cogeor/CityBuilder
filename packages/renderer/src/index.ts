@@ -33,3 +33,13 @@ export {
   MockGL,
   MockCanvas,
 } from "./backends/index.js";
+
+export {
+  INSTANCE_BYTE_SIZE,
+  RenderPass,
+  type RenderInstance,
+  DEFAULT_INSTANCE,
+  packInstance,
+  unpackInstance,
+  RenderInstanceBuilder,
+} from "./types/index.js";
