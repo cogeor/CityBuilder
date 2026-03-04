@@ -29,6 +29,13 @@ export {
   type BudgetEventType,
   type BudgetEventHandler,
   BudgetPanel,
+  AdvisorCategory,
+  AdvisorSeverity,
+  type DiagnosticItem,
+  type AdvisorState,
+  type CityMetrics,
+  formatSeverityLabel,
+  AdvisorPanel,
 } from './inspectors/index.js';
 
 export {

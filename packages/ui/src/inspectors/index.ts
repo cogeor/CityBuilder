@@ -19,3 +19,13 @@ export {
   type BudgetEventHandler,
   BudgetPanel,
 } from './budget_panel.js';
+
+export {
+  AdvisorCategory,
+  AdvisorSeverity,
+  type DiagnosticItem,
+  type AdvisorState,
+  type CityMetrics,
+  formatSeverityLabel,
+  AdvisorPanel,
+} from './advisor_panel.js';
