@@ -5,5 +5,6 @@ pub mod construction;
 pub mod finance;
 pub mod jobs;
 pub mod population;
+pub mod system_template;
 pub mod transport;
 pub mod utilities;
