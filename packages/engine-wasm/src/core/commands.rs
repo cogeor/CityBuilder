@@ -4,6 +4,7 @@
 //! outside the simulation tick. Each command is validated before
 //! application; invalid commands are rejected with an error.
 
+use crate::core::archetypes::ArchetypeRegistry;
 use crate::core::world::{CityPolicies, WorldState};
 use crate::core::commands_spec;
 use crate::core_types::*;
@@ -91,7 +92,16 @@ pub enum CommandEffect {
 
 /// Apply a command to the world state after validation.
 pub fn apply_command(world: &mut WorldState, cmd: &Command) -> CommandResult {
-    commands_spec::validate_command(world, cmd)?;
+    apply_command_with_registry(world, None, cmd)
+}
+
+/// Apply a command with registry-aware validation and footprint logic.
+pub fn apply_command_with_registry(
+    world: &mut WorldState,
+    registry: Option<&ArchetypeRegistry>,
+    cmd: &Command,
+) -> CommandResult {
+    commands_spec::validate_command_with_registry(world, registry, cmd)?;
 
     match cmd {
         Command::PlaceEntity {
@@ -100,6 +110,11 @@ pub fn apply_command(world: &mut WorldState, cmd: &Command) -> CommandResult {
             y,
             rotation,
         } => {
+            if let Some(registry) = registry {
+                if let Some(def) = registry.get(*archetype_id) {
+                    world.treasury -= def.cost_at_level(1);
+                }
+            }
             // Place entity
             match world.place_entity(*archetype_id, *x, *y, *rotation) {
                 Some(handle) => Ok(CommandEffect::EntityPlaced { handle }),
@@ -143,10 +158,25 @@ pub fn apply_command(world: &mut WorldState, cmd: &Command) -> CommandResult {
             let handles: Vec<EntityHandle> = world.entities.iter_alive().collect();
             for handle in handles {
                 if let Some(pos) = world.entities.get_pos(handle) {
-                    if pos.x >= *x
-                        && pos.x < *x + *w as i16
-                        && pos.y >= *y
-                        && pos.y < *y + *h as i16
+                    let (fw, fh) = registry
+                        .and_then(|reg| {
+                            world
+                                .entities
+                                .get_archetype(handle)
+                                .and_then(|id| reg.get(id))
+                                .map(|def| (def.footprint_w as i16, def.footprint_h as i16))
+                        })
+                        .unwrap_or((1, 1));
+                    if rects_overlap(
+                        *x,
+                        *y,
+                        *w as i16,
+                        *h as i16,
+                        pos.x,
+                        pos.y,
+                        fw,
+                        fh,
+                    )
                     {
                         world.entities.free(handle);
                         removed += 1;
@@ -182,6 +212,23 @@ pub fn apply_command(world: &mut WorldState, cmd: &Command) -> CommandResult {
             Ok(CommandEffect::ZoningApplied { count })
         }
     }
+}
+
+fn rects_overlap(
+    ax: i16,
+    ay: i16,
+    aw: i16,
+    ah: i16,
+    bx: i16,
+    by: i16,
+    bw: i16,
+    bh: i16,
+) -> bool {
+    let a_right = ax + aw;
+    let a_bottom = ay + ah;
+    let b_right = bx + bw;
+    let b_bottom = by + bh;
+    ax < b_right && a_right > bx && ay < b_bottom && a_bottom > by
 }
 
 /// Get the current value of a policy.

@@ -1,5 +1,6 @@
 //! Simulation systems — per-tick logic for city mechanics.
 
+pub mod buildings;
 pub mod city_events;
 pub mod commute_happiness;
 pub mod construction;

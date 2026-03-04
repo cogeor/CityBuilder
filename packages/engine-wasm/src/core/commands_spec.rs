@@ -4,6 +4,8 @@
 //! condition against the world state. Specs compose via `CompositeSpec`
 //! to form complete validation pipelines per command type.
 
+use crate::core::archetypes::ArchetypeRegistry;
+use crate::core::buildings::zone_for_archetype;
 use crate::core::commands::{Command, CommandError};
 use crate::core::world::WorldState;
 use crate::core_types::*;
@@ -210,6 +212,18 @@ pub fn zone_spec(x: i16, y: i16) -> CompositeSpec {
 ///
 /// This is the single ownership point for command preconditions.
 pub fn validate_command(world: &WorldState, cmd: &Command) -> Result<(), CommandError> {
+    validate_command_with_registry(world, None, cmd)
+}
+
+/// Registry-aware command validation.
+///
+/// When a registry is provided, placement preconditions become footprint,
+/// zone, and treasury aware for city-builder semantics.
+pub fn validate_command_with_registry(
+    world: &WorldState,
+    registry: Option<&ArchetypeRegistry>,
+    cmd: &Command,
+) -> Result<(), CommandError> {
     match cmd {
         Command::PlaceEntity {
             archetype_id,
@@ -217,8 +231,77 @@ pub fn validate_command(world: &WorldState, cmd: &Command) -> Result<(), Command
             y,
             rotation: _,
         } => {
-            // Footprint/cost are placeholders until archetype lookup is threaded into validation.
-            build_spec(*x, *y, 1, 1, *archetype_id, 0).check(world)
+            let Some(registry) = registry else {
+                return build_spec(*x, *y, 1, 1, *archetype_id, 0).check(world);
+            };
+            let Some(def) = registry.get(*archetype_id) else {
+                return Err(CommandError::ValidationFailed(
+                    "invalid archetype id".to_string(),
+                ));
+            };
+            if *x < 0 || *y < 0 {
+                return Err(CommandError::OutOfBounds);
+            }
+
+            for dy in 0..def.footprint_h as i16 {
+                for dx in 0..def.footprint_w as i16 {
+                    let tx = *x + dx;
+                    let ty = *y + dy;
+                    if !world.tiles.in_bounds(tx, ty) {
+                        return Err(CommandError::OutOfBounds);
+                    }
+                    if !world.is_buildable(tx, ty) {
+                        return Err(CommandError::TileOccupied);
+                    }
+                }
+            }
+
+            if let Some(zone) = zone_for_archetype(def) {
+                for dy in 0..def.footprint_h as i16 {
+                    for dx in 0..def.footprint_w as i16 {
+                        let tx = *x + dx;
+                        let ty = *y + dy;
+                        let Some(tile) = world.tiles.get(tx, ty) else {
+                            return Err(CommandError::OutOfBounds);
+                        };
+                        if tile.zone != zone {
+                            return Err(CommandError::ValidationFailed(
+                                "zoning mismatch for archetype".to_string(),
+                            ));
+                        }
+                    }
+                }
+            }
+
+            for handle in world.entities.iter_alive() {
+                let Some(pos) = world.entities.get_pos(handle) else {
+                    continue;
+                };
+                let (w, h) = world
+                    .entities
+                    .get_archetype(handle)
+                    .and_then(|id| registry.get(id))
+                    .map(|def| (def.footprint_w as i16, def.footprint_h as i16))
+                    .unwrap_or((1, 1));
+                if rects_overlap(
+                    *x,
+                    *y,
+                    def.footprint_w as i16,
+                    def.footprint_h as i16,
+                    pos.x,
+                    pos.y,
+                    w,
+                    h,
+                ) {
+                    return Err(CommandError::TileOccupied);
+                }
+            }
+
+            let cost = def.cost_at_level(1);
+            if world.treasury < cost {
+                return Err(CommandError::InsufficientFunds);
+            }
+            Ok(())
         }
         Command::Bulldoze { x, y, .. } => zone_spec(*x, *y).check(world),
         Command::SetZoning { x, y, .. } => zone_spec(*x, *y).check(world),
@@ -235,11 +318,30 @@ pub fn validate_command(world: &WorldState, cmd: &Command) -> Result<(), Command
     }
 }
 
+fn rects_overlap(
+    ax: i16,
+    ay: i16,
+    aw: i16,
+    ah: i16,
+    bx: i16,
+    by: i16,
+    bw: i16,
+    bh: i16,
+) -> bool {
+    let a_right = ax + aw;
+    let a_bottom = ay + ah;
+    let b_right = bx + bw;
+    let b_bottom = by + bh;
+    ax < b_right && a_right > bx && ay < b_bottom && a_bottom > by
+}
+
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::archetypes::ArchetypeRegistry;
+    use crate::core::buildings::{register_base_city_builder_archetypes, ARCH_RES_SMALL_HOUSE};
     use crate::core::world::WorldState;
     use crate::core_types::{MapSize, TerrainType, ZoneType};
 
@@ -555,5 +657,38 @@ mod tests {
             handle: EntityHandle::INVALID,
         };
         assert_eq!(validate_command(&world, &cmd), Err(CommandError::InvalidEntity));
+    }
+
+    #[test]
+    fn validate_with_registry_rejects_zone_mismatch_for_residential() {
+        let mut world = make_world();
+        let mut registry = ArchetypeRegistry::new();
+        register_base_city_builder_archetypes(&mut registry);
+        world.tiles.set_zone(4, 4, ZoneType::Industrial);
+        let cmd = Command::PlaceEntity {
+            archetype_id: ARCH_RES_SMALL_HOUSE,
+            x: 4,
+            y: 4,
+            rotation: 0,
+        };
+        assert!(matches!(
+            validate_command_with_registry(&world, Some(&registry), &cmd),
+            Err(CommandError::ValidationFailed(_))
+        ));
+    }
+
+    #[test]
+    fn validate_with_registry_accepts_matching_zone() {
+        let mut world = make_world();
+        let mut registry = ArchetypeRegistry::new();
+        register_base_city_builder_archetypes(&mut registry);
+        world.tiles.set_zone(4, 4, ZoneType::Residential);
+        let cmd = Command::PlaceEntity {
+            archetype_id: ARCH_RES_SMALL_HOUSE,
+            x: 4,
+            y: 4,
+            rotation: 0,
+        };
+        assert!(validate_command_with_registry(&world, Some(&registry), &cmd).is_ok());
     }
 }

@@ -3,6 +3,7 @@
 pub mod alloc_tracker;
 pub mod archetype_traits;
 pub mod archetypes;
+pub mod buildings;
 pub mod commands;
 pub mod commands_spec;
 pub mod diffs;

@@ -12,6 +12,7 @@ pub mod error_boundary;
 use wasm_bindgen::prelude::*;
 
 use crate::core::archetypes::ArchetypeRegistry;
+use crate::core::buildings::register_base_city_builder_archetypes;
 use crate::core::commands::Command;
 use crate::core::network::RoadGraph;
 use crate::core::world::WorldState;
@@ -43,7 +44,8 @@ impl GameHandle {
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen(constructor))]
     pub fn new(seed: u64, map_width: u16, map_height: u16) -> GameHandle {
         let world = WorldState::new(MapSize::new(map_width, map_height), seed);
-        let registry = ArchetypeRegistry::new();
+        let mut registry = ArchetypeRegistry::new();
+        register_base_city_builder_archetypes(&mut registry);
         let road_graph = RoadGraph::new();
         let engine = SimulationEngine::new(world, registry, road_graph);
 
@@ -148,7 +150,8 @@ impl GameHandle {
     /// Returns `Err(String)` if deserialization fails.
     pub fn load(data: &[u8]) -> Result<GameHandle, String> {
         let world = save::deserialize_world(data)?;
-        let registry = ArchetypeRegistry::new();
+        let mut registry = ArchetypeRegistry::new();
+        register_base_city_builder_archetypes(&mut registry);
         let road_graph = RoadGraph::new();
         let engine = SimulationEngine::new(world, registry, road_graph);
 
@@ -178,6 +181,7 @@ pub fn load_game(data: &[u8]) -> Result<GameHandle, JsValue> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::buildings::ARCH_UTIL_POWER_PLANT;
 
     // ── Test 1: GameHandle::new creates valid handle ────────────────────
 
@@ -227,8 +231,11 @@ mod tests {
     #[test]
     fn apply_command_json_valid() {
         let mut handle = GameHandle::new(42, 32, 32);
-        let cmd_json = r#"{"PlaceEntity":{"archetype_id":1,"x":5,"y":5,"rotation":0}}"#;
-        let result = handle.apply_command_json(cmd_json);
+        let cmd_json = format!(
+            r#"{{"PlaceEntity":{{"archetype_id":{},"x":5,"y":5,"rotation":0}}}}"#,
+            ARCH_UTIL_POWER_PLANT
+        );
+        let result = handle.apply_command_json(&cmd_json);
         assert!(result.contains("ok"), "Expected ok, got: {}", result);
         assert!(result.contains("EntityPlaced"));
     }
@@ -248,8 +255,11 @@ mod tests {
     #[test]
     fn apply_command_json_out_of_bounds() {
         let mut handle = GameHandle::new(42, 32, 32);
-        let cmd_json = r#"{"PlaceEntity":{"archetype_id":1,"x":100,"y":100,"rotation":0}}"#;
-        let result = handle.apply_command_json(cmd_json);
+        let cmd_json = format!(
+            r#"{{"PlaceEntity":{{"archetype_id":{},"x":100,"y":100,"rotation":0}}}}"#,
+            ARCH_UTIL_POWER_PLANT
+        );
+        let result = handle.apply_command_json(&cmd_json);
         assert!(result.contains("error"), "Expected error, got: {}", result);
         assert!(result.contains("OutOfBounds"));
     }

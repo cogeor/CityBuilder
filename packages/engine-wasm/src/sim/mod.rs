@@ -26,6 +26,7 @@ mod determinism_guards {
                 "sim/systems/construction.rs",
                 include_str!("systems/construction.rs"),
             ),
+            ("sim/systems/buildings.rs", include_str!("systems/buildings.rs")),
             ("sim/systems/utilities.rs", include_str!("systems/utilities.rs")),
             ("sim/systems/population.rs", include_str!("systems/population.rs")),
             ("sim/systems/jobs.rs", include_str!("systems/jobs.rs")),

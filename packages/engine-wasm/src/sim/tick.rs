@@ -114,7 +114,9 @@ impl SimulationEngine {
         let queued: Vec<Command> = self.pending_commands.drain(..).collect();
         let mut invalidation_reasons: Vec<InvalidationReason> = Vec::new();
         for cmd in &queued {
-            if let Ok(effect) = commands::apply_command(&mut self.world, cmd) {
+            if let Ok(effect) =
+                commands::apply_command_with_registry(&mut self.world, Some(&self.registry), cmd)
+            {
                 self.collect_command_diff(&mut diffs, &effect);
                 self.collect_invalidation_reason(&mut invalidation_reasons, &effect);
             }
@@ -126,6 +128,13 @@ impl SimulationEngine {
         }
 
         // Phase 3: run systems in stable order.
+        crate::sim::systems::buildings::tick_zoned_development(
+            &mut self.world,
+            &self.registry,
+            tick,
+            &mut self.rng,
+        );
+
         crate::sim::systems::construction::tick_construction(
             &mut self.world.entities,
             &self.registry,
@@ -246,7 +255,7 @@ impl SimulationEngine {
     ///
     /// Delegates to `core::commands::apply_command`.
     pub fn apply_command(&mut self, cmd: &Command) -> CommandResult {
-        commands::apply_command(&mut self.world, cmd)
+        commands::apply_command_with_registry(&mut self.world, Some(&self.registry), cmd)
     }
 
     fn collect_invalidation_reason(
@@ -331,12 +340,23 @@ fn policy_key_name(key: PolicyKey) -> &'static str {
 mod tests {
     use super::*;
     use crate::core::archetypes::{ArchetypeDefinition, ArchetypeTag};
+    use crate::core::buildings::{
+        register_base_city_builder_archetypes, ARCH_RES_SMALL_HOUSE, ARCH_UTIL_POWER_PLANT,
+    };
     use crate::core::commands::{Command, CommandEffect};
 
     /// Helper: create a minimal world + registry + road_graph for testing.
     fn make_engine(seed: u64) -> SimulationEngine {
         let world = WorldState::new(MapSize::new(32, 32), seed);
         let registry = ArchetypeRegistry::new();
+        let road_graph = RoadGraph::new();
+        SimulationEngine::new(world, registry, road_graph)
+    }
+
+    fn make_engine_with_base_archetypes(seed: u64) -> SimulationEngine {
+        let world = WorldState::new(MapSize::new(32, 32), seed);
+        let mut registry = ArchetypeRegistry::new();
+        register_base_city_builder_archetypes(&mut registry);
         let road_graph = RoadGraph::new();
         SimulationEngine::new(world, registry, road_graph)
     }
@@ -513,11 +533,19 @@ mod tests {
 
     #[test]
     fn apply_command_works() {
-        let mut engine = make_engine(42);
+        let mut engine = make_engine_with_base_archetypes(42);
+        let zone = Command::SetZoning {
+            x: 3,
+            y: 3,
+            w: 1,
+            h: 1,
+            zone: ZoneType::Residential,
+        };
+        assert!(engine.apply_command(&zone).is_ok());
 
         // Place an entity via command.
         let cmd = Command::PlaceEntity {
-            archetype_id: 1,
+            archetype_id: ARCH_RES_SMALL_HOUSE,
             x: 3,
             y: 3,
             rotation: 0,
@@ -605,11 +633,20 @@ mod tests {
 
     #[test]
     fn queued_command_applied_during_tick_phase_1() {
-        let mut engine = make_engine(42);
+        let mut engine = make_engine_with_base_archetypes(42);
         assert_eq!(engine.world.entities.count(), 0);
+        assert!(engine
+            .apply_command(&Command::SetZoning {
+                x: 4,
+                y: 4,
+                w: 1,
+                h: 1,
+                zone: ZoneType::Residential,
+            })
+            .is_ok());
 
         engine.queue_command(Command::PlaceEntity {
-            archetype_id: 1,
+            archetype_id: ARCH_RES_SMALL_HOUSE,
             x: 4,
             y: 4,
             rotation: 0,
@@ -661,6 +698,15 @@ mod tests {
         // only if command application happens before system execution.
         registry.register(make_residential(1, 1));
         let mut engine = SimulationEngine::new(world, registry, road_graph);
+        assert!(engine
+            .apply_command(&Command::SetZoning {
+                x: 5,
+                y: 5,
+                w: 1,
+                h: 1,
+                zone: ZoneType::Residential,
+            })
+            .is_ok());
 
         engine.queue_command(Command::PlaceEntity {
             archetype_id: 1,
@@ -679,5 +725,50 @@ mod tests {
             completed,
             "Expected BuildingCompleted in same tick, proving phase order is command -> systems"
         );
+    }
+
+    #[test]
+    fn zoned_tiles_can_spawn_structures_over_time() {
+        let mut engine = make_engine_with_base_archetypes(77);
+
+        let zoning = Command::SetZoning {
+            x: 4,
+            y: 4,
+            w: 8,
+            h: 8,
+            zone: ZoneType::Residential,
+        };
+        assert!(engine.apply_command(&zoning).is_ok());
+
+        for _ in 0..120 {
+            engine.tick();
+        }
+
+        assert!(engine.world.entities.count() > 0);
+        let spawned_residential = engine.world.entities.iter_alive().any(|h| {
+            engine
+                .world
+                .entities
+                .get_archetype(h)
+                .and_then(|id| engine.registry.get(id))
+                .map(|def| def.id == ARCH_RES_SMALL_HOUSE || def.has_tag(ArchetypeTag::Residential))
+                .unwrap_or(false)
+        });
+        assert!(spawned_residential);
+    }
+
+    #[test]
+    fn special_building_can_be_placed_without_zone() {
+        let mut engine = make_engine_with_base_archetypes(99);
+
+        let place = Command::PlaceEntity {
+            archetype_id: ARCH_UTIL_POWER_PLANT,
+            x: 2,
+            y: 2,
+            rotation: 0,
+        };
+        let result = engine.apply_command(&place);
+        assert!(result.is_ok());
+        assert_eq!(engine.world.entities.count(), 1);
     }
 }
