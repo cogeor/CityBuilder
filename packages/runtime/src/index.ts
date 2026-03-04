@@ -8,3 +8,6 @@ export * from "./workers/index.js";
 
 // Plugin manifest, registry, and dependency resolution
 export * from "./plugins/index.js";
+
+// Save/load orchestration
+export * from "./saves/index.js";
