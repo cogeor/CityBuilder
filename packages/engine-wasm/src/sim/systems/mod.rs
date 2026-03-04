@@ -2,9 +2,11 @@
 
 pub mod city_events;
 pub mod construction;
+pub mod education;
 pub mod finance;
 pub mod jobs;
 pub mod population;
 pub mod system_template;
 pub mod transport;
 pub mod utilities;
+pub mod wealth_density;
