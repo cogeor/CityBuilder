@@ -57,3 +57,26 @@ export {
   OVERLAY_LEGENDS,
   OverlayPanel,
 } from './overlays/index.js';
+
+export {
+  type CameraState,
+  type KeyBindings,
+  type CameraLimits,
+  type CameraEventType,
+  type CameraEventHandler,
+  DEFAULT_KEY_BINDINGS,
+  DEFAULT_CAMERA_LIMITS,
+  CameraController,
+} from './input/index.js';
+
+export {
+  DevPanel,
+  type PerformanceMetrics,
+  type EntityDebugInfo,
+  type CacheStats,
+  type PhaseWheelStatus,
+  type DevToolsEventType,
+  type DevToolsEventHandler,
+  type ConsoleEntry,
+  DevTools,
+} from './devtools/index.js';
