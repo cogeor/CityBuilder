@@ -96,3 +96,24 @@ export {
   normalizeHeatmapValue,
   OverlayRenderer,
 } from "./overlays/index.js";
+
+export {
+  PALETTE_VERTEX_GLSL,
+  PALETTE_FRAGMENT_GLSL,
+  PALETTE_VERTEX_WGSL,
+  PALETTE_FRAGMENT_WGSL,
+  MaterialChannel,
+  UNIFORM_NAMES,
+  DEFAULT_LIGHTING,
+  NIGHT_LIGHTING,
+  computeLighting,
+} from "./shaders/index.js";
+
+export {
+  type FrameStats,
+  type PipelineConfig,
+  type RenderDataSources,
+  type RenderPlan,
+  DEFAULT_PIPELINE_CONFIG,
+  RenderPipeline,
+} from "./render_pipeline.js";
