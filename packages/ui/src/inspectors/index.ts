@@ -35,3 +35,12 @@ export {
   type TimelineEvent,
   LessonsTimeline,
 } from './lessons_timeline.js';
+
+export {
+  MetricType,
+  type DataSeriesPoint,
+  type DataSeries,
+  type StatsViewConfig,
+  METRIC_CONFIGS,
+  StatsPanel,
+} from './stats_panel.js';

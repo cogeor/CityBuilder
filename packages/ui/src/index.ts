@@ -39,6 +39,12 @@ export {
   LessonType,
   type TimelineEvent,
   LessonsTimeline,
+  MetricType,
+  type DataSeriesPoint,
+  type DataSeries,
+  type StatsViewConfig,
+  METRIC_CONFIGS,
+  StatsPanel,
 } from './inspectors/index.js';
 
 export {
@@ -106,3 +112,17 @@ export {
   applyConfig,
   AccessibilityManager,
 } from './accessibility/index.js';
+
+export {
+  AudioCategory,
+  AmbientLayer,
+  SFXType,
+  type SpatialParams,
+  type VolumeSettings,
+  DEFAULT_VOLUME,
+  type IAudioEngine,
+  computeSpatialAudio,
+  NoOpAudioEngine,
+  type SFXLogEntry,
+  WebAudioEngine,
+} from './audio/index.js';
