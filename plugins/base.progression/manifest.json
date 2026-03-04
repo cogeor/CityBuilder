@@ -1,0 +1,10 @@
+{
+  "id": "base.progression",
+  "name": "Base Progression",
+  "version": "1.0.0",
+  "description": "Scenarios and challenge objectives",
+  "author": "TownBuilder",
+  "dependencies": [],
+  "activation": "onWorldLoad",
+  "provides": ["scenarios"]
+}
