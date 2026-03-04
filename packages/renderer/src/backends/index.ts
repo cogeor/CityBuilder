@@ -9,3 +9,18 @@ export {
   MockGL,
   MockCanvas,
 } from "./webgl2.js";
+
+export {
+  type MockGPUCallLog,
+  WGSL_VERTEX_SHADER,
+  WGSL_FRAGMENT_SHADER,
+  isWebGPUAvailable,
+  WebGPUBackend,
+  MockGPUAdapter,
+  MockGPUDevice,
+  MockGPUContext,
+  MockGPUCanvas,
+  MockGPUQueue,
+  MockGPURenderPassEncoder,
+  MockGPUCommandEncoder,
+} from "./webgpu.js";
