@@ -54,3 +54,14 @@ export {
   // Classes
   WorkerStateMachine,
 } from "./state_machine.js";
+
+export {
+  // Enums
+  RecoveryAction,
+
+  // Interfaces
+  type ErrorReport,
+
+  // Classes
+  ErrorRecoveryManager,
+} from "./error_recovery.js";

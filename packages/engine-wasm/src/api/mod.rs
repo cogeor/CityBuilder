@@ -6,6 +6,8 @@
 //! are only applied when targeting `wasm32`, allowing the module to compile
 //! and be tested on native targets as well.
 
+pub mod error_boundary;
+
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
