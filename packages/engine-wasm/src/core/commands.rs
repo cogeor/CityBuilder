@@ -69,6 +69,8 @@ pub enum CommandError {
     InvalidEntity,
     InsufficientFunds,
     InvalidValue,
+    /// Generic validation failure with a descriptive message.
+    ValidationFailed(String),
 }
 
 /// Result of command application.

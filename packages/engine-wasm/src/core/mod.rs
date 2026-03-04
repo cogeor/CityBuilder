@@ -2,6 +2,7 @@
 
 pub mod archetypes;
 pub mod commands;
+pub mod commands_spec;
 pub mod diffs;
 pub mod entity;
 pub mod events;
