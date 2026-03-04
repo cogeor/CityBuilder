@@ -12,7 +12,6 @@ export {
 
   // Classes
   SimWorker,
-  MockGameHandle,
 
   // Utilities (exported for testing)
   _uint8ArrayToBase64,

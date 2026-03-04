@@ -4,12 +4,18 @@
 
 import { CommandHistory, type CommandRecord } from "./history/command_history.js";
 import { PluginRegistry } from "./plugins/loader.js";
+import type { EngineCommand } from "./engine/commands.js";
 import {
   SaveManager,
   InMemorySaveStorage,
   type ISaveStorage,
 } from "./saves/save_manager.js";
 import { WorkerManager, type IWorkerManager } from "./messaging/worker_manager.js";
+
+function getCommandKind(command: EngineCommand): string {
+  const keys = Object.keys(command);
+  return keys.length > 0 ? keys[0] : "Unknown";
+}
 
 // ---- RuntimeConfig ----
 
@@ -178,7 +184,7 @@ export class RuntimeFacade {
    * Records the command in history and forwards it to the sim worker.
    * Throws if the runtime is not in the Running state.
    */
-  sendCommand(type: string, payload: unknown): void {
+  sendCommand(command: EngineCommand): void {
     if (this._state !== RuntimeState.Running) {
       throw new Error(
         `Cannot send command: runtime is in state "${this._state}", expected "${RuntimeState.Running}"`,
@@ -189,8 +195,8 @@ export class RuntimeFacade {
 
     const record: CommandRecord = {
       id: this._commandSequence,
-      type,
-      doPayload: payload,
+      type: getCommandKind(command),
+      doPayload: command,
       undoPayload: null,
       timestamp: Date.now(),
     };
@@ -199,7 +205,7 @@ export class RuntimeFacade {
 
     // Forward to sim worker if available
     if (this._workerManager) {
-      this._workerManager.sendCommand(JSON.stringify({ type, payload })).catch(() => {
+      this._workerManager.sendCommand(JSON.stringify(command)).catch(() => {
         // Command delivery failures are logged but do not throw synchronously
       });
     }

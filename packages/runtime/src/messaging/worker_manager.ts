@@ -136,11 +136,16 @@ export class WorkerManager implements IWorkerManager {
       throw new Error("No sim worker assigned");
     }
 
-    return new Promise<void>((resolve) => {
+    return new Promise<void>((resolve, reject) => {
       // Temporarily listen for handshake ack
       const onMessage = (event: MessageEvent) => {
         const msg = event.data;
         if (msg && msg.type === MessageType.HANDSHAKE_ACK) {
+          worker.removeEventListener("message", onMessage);
+          if (msg.success === false) {
+            reject(new Error(msg.error ?? "Sim worker handshake failed"));
+            return;
+          }
           this.state.simReady = true;
           resolve();
         }
@@ -157,6 +162,9 @@ export class WorkerManager implements IWorkerManager {
         type: MessageType.HANDSHAKE,
         wire_version: WIRE_VERSION,
         timestamp: Date.now(),
+        seed,
+        width,
+        height,
       });
     });
   }
@@ -171,10 +179,15 @@ export class WorkerManager implements IWorkerManager {
       throw new Error("No render worker assigned");
     }
 
-    return new Promise<void>((resolve) => {
+    return new Promise<void>((resolve, reject) => {
       const onMessage = (event: MessageEvent) => {
         const msg = event.data;
         if (msg && msg.type === MessageType.HANDSHAKE_ACK) {
+          worker.removeEventListener("message", onMessage);
+          if (msg.success === false) {
+            reject(new Error(msg.error ?? "Render worker handshake failed"));
+            return;
+          }
           this.state.renderReady = true;
           resolve();
         }

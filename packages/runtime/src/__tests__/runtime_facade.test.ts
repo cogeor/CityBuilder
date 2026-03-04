@@ -5,6 +5,7 @@ import {
   RuntimeState,
   type RuntimeConfig,
 } from "../runtime_facade.js";
+import type { EngineCommand } from "../engine/commands.js";
 
 // ---- Helpers ----
 
@@ -15,6 +16,38 @@ function makeConfig(overrides?: Partial<RuntimeConfig>): RuntimeConfig {
     mapHeight: 64,
     seed: 42,
     ...overrides,
+  };
+}
+
+function makeCommand(kind: "place" | "demolish" | "zone"): EngineCommand {
+  if (kind === "place") {
+    return {
+      PlaceEntity: {
+        archetype_id: 100,
+        x: 10,
+        y: 20,
+        rotation: 0,
+      },
+    };
+  }
+  if (kind === "demolish") {
+    return {
+      Bulldoze: {
+        x: 1,
+        y: 2,
+        w: 1,
+        h: 1,
+      },
+    };
+  }
+  return {
+    SetZoning: {
+      x: 0,
+      y: 0,
+      w: 2,
+      h: 2,
+      zone: "Residential",
+    },
   };
 }
 
@@ -49,7 +82,7 @@ describe("RuntimeFacade", () => {
   it("sendCommand adds to command history", async () => {
     await facade.start();
 
-    facade.sendCommand("place_building", { x: 10, y: 20 });
+    facade.sendCommand(makeCommand("place"));
 
     const history = facade.getCommandHistory();
     expect(history.getUndoCount()).toBe(1);
@@ -60,12 +93,12 @@ describe("RuntimeFacade", () => {
   it("undo delegates to CommandHistory", async () => {
     await facade.start();
 
-    facade.sendCommand("place_building", { x: 10, y: 20 });
+    facade.sendCommand(makeCommand("place"));
     expect(facade.getCommandHistory().getUndoCount()).toBe(1);
 
     const undone = facade.undo();
     expect(undone).not.toBeNull();
-    expect(undone!.type).toBe("place_building");
+    expect(undone!.type).toBe("PlaceEntity");
     expect(facade.getCommandHistory().getUndoCount()).toBe(0);
     expect(facade.getCommandHistory().getRedoCount()).toBe(1);
   });
@@ -74,12 +107,12 @@ describe("RuntimeFacade", () => {
   it("redo delegates to CommandHistory", async () => {
     await facade.start();
 
-    facade.sendCommand("place_building", { x: 10, y: 20 });
+    facade.sendCommand(makeCommand("place"));
     facade.undo();
 
     const redone = facade.redo();
     expect(redone).not.toBeNull();
-    expect(redone!.type).toBe("place_building");
+    expect(redone!.type).toBe("PlaceEntity");
     expect(facade.getCommandHistory().getUndoCount()).toBe(1);
     expect(facade.getCommandHistory().getRedoCount()).toBe(0);
   });
@@ -130,7 +163,7 @@ describe("RuntimeFacade", () => {
 
   // ---- Test 11: can't send commands when not running ----
   it("throws when sending a command while not running", () => {
-    expect(() => facade.sendCommand("place", {})).toThrow(
+    expect(() => facade.sendCommand(makeCommand("place"))).toThrow(
       /Cannot send command.*Uninitialized.*Running/,
     );
   });
@@ -164,21 +197,21 @@ describe("RuntimeFacade", () => {
   it("multiple commands are tracked in order", async () => {
     await facade.start();
 
-    facade.sendCommand("place_building", { id: 1 });
-    facade.sendCommand("demolish", { id: 2 });
-    facade.sendCommand("zone", { id: 3 });
+    facade.sendCommand(makeCommand("place"));
+    facade.sendCommand(makeCommand("demolish"));
+    facade.sendCommand(makeCommand("zone"));
 
     const history = facade.getCommandHistory();
     expect(history.getUndoCount()).toBe(3);
 
     const r1 = facade.undo();
-    expect(r1!.type).toBe("zone");
+    expect(r1!.type).toBe("SetZoning");
 
     const r2 = facade.undo();
-    expect(r2!.type).toBe("demolish");
+    expect(r2!.type).toBe("Bulldoze");
 
     const r3 = facade.undo();
-    expect(r3!.type).toBe("place_building");
+    expect(r3!.type).toBe("PlaceEntity");
 
     expect(facade.undo()).toBeNull();
   });

@@ -17,3 +17,6 @@ export * from "./history/index.js";
 
 // Runtime orchestration facade
 export { RuntimeFacade, RuntimeState, type RuntimeConfig } from "./runtime_facade.js";
+
+// Rust/WASM engine protocol helpers
+export * from "./engine/index.js";

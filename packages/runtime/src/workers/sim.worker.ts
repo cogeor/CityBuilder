@@ -1,12 +1,8 @@
-// @townbuilder/runtime — Sim worker: WASM tick loop in Web Worker
-// Loads the simulation engine (WASM or mock) and drives the tick loop,
-// communicating with the main thread via structured messages.
+// @townbuilder/runtime -- Sim worker: WASM-authoritative tick loop
+// TS worker owns orchestration/messaging only. World simulation lives in Rust/WASM.
 
 import { MessageType, WIRE_VERSION } from "../messaging/types.js";
 
-// ---- SimSpeed Enum ----
-
-/** Simulation speed multiplier. Maps to ticks-per-interval. */
 export enum SimSpeed {
   PAUSED = 0,
   NORMAL = 1,
@@ -14,9 +10,6 @@ export enum SimSpeed {
   ULTRA = 4,
 }
 
-// ---- Interfaces ----
-
-/** Result produced by a single simulation tick. */
 export interface TickResult {
   readonly tick: number;
   readonly events: string[];
@@ -24,113 +17,116 @@ export interface TickResult {
   readonly treasury: number;
 }
 
-/** Internal state of the simulation worker. */
+interface WasmGameHandleLike {
+  tick(): string | TickResult;
+  apply_command_json(json: string): string | boolean;
+  save(): Uint8Array;
+  get_tick(): number;
+  get_population(): number;
+  get_treasury(): number;
+}
+
+interface WasmModuleLike {
+  GameHandle?: {
+    new?: (seed: number, width: number, height: number) => WasmGameHandleLike;
+  };
+  load_game?: (data: Uint8Array) => WasmGameHandleLike;
+}
+
+type WasmModuleLoader = () => Promise<WasmModuleLike>;
+
 export interface SimWorkerState {
-  game: any; // GameHandle from WASM — typed as any until wasm-bindgen types exist
+  game: WasmGameHandleLike | null;
+  wasm: WasmModuleLike | null;
   speed: SimSpeed;
   running: boolean;
   tickInterval: number | null;
 }
 
-// ---- Constants ----
-
-/** Base tick interval in milliseconds. At NORMAL speed this gives 20 ticks/sec. */
 export const TICK_INTERVAL_MS = 50;
 
-// ---- MockGameHandle ----
-
-/**
- * Lightweight stand-in for the real WASM GameHandle.
- * Used in tests and when the WASM module is not available.
- */
-export class MockGameHandle {
-  tick_counter = 0;
-  pop = 100;
-  treasury = 10000;
-
-  tick(): TickResult {
-    this.tick_counter += 1;
-    return {
-      tick: this.tick_counter,
-      events: [],
-      population: this.pop,
-      treasury: this.treasury,
-    };
+function parseTickResult(raw: string | TickResult): TickResult {
+  if (typeof raw !== "string") {
+    return raw;
   }
-
-  apply_command_json(_json: string): boolean {
-    // Mock: commands are accepted but have no effect
-    return true;
+  const parsed = JSON.parse(raw) as {
+    tick?: number;
+    population?: number;
+    treasury?: number;
+    event_count?: number;
+    error?: string;
+  };
+  if (parsed.error) {
+    throw new Error(parsed.error);
   }
-
-  save(): Uint8Array {
-    // Mock: return an empty save blob
-    return new Uint8Array(0);
-  }
-
-  load(_data: Uint8Array): boolean {
-    // Mock: loads always succeed
-    return true;
-  }
-
-  get_tick(): number {
-    return this.tick_counter;
-  }
-
-  get_population(): number {
-    return this.pop;
-  }
-
-  get_treasury(): number {
-    return this.treasury;
-  }
+  return {
+    tick: parsed.tick ?? 0,
+    events: [],
+    population: parsed.population ?? 0,
+    treasury: parsed.treasury ?? 0,
+  };
 }
 
-// ---- SimWorker Class ----
+function parseCommandResult(raw: string | boolean): { success: boolean; error?: string } {
+  if (typeof raw === "boolean") {
+    return { success: raw };
+  }
+  const parsed = JSON.parse(raw) as { ok?: string; error?: string };
+  if (parsed.error) {
+    return { success: false, error: parsed.error };
+  }
+  return { success: typeof parsed.ok === "string" };
+}
 
-/**
- * Manages the simulation tick loop inside a Web Worker.
- *
- * Message routing:
- *   main thread  -->  handleMessage()  -->  postResponse()  -->  main thread
- *
- * The class is decoupled from the global `self` / `postMessage` so it can be
- * tested without a real Worker environment.
- */
+async function loadWasmModule(): Promise<WasmModuleLike> {
+  const globalPath = (globalThis as { __TOWNBUILDER_ENGINE_WASM_PATH__?: string })
+    .__TOWNBUILDER_ENGINE_WASM_PATH__;
+  const modulePath = globalPath ?? "@townbuilder/engine-wasm";
+  const moduleRef = await import(modulePath as string);
+  return moduleRef as WasmModuleLike;
+}
+
 export class SimWorker {
   state: SimWorkerState;
-
-  /**
-   * Optional callback used to send messages back to the main thread.
-   * In a real worker this is wired to `self.postMessage`.
-   * In tests it can be replaced with a spy.
-   */
   postResponse: (msg: any) => void;
+  private readonly _wasmLoader: WasmModuleLoader;
 
-  constructor(postResponse?: (msg: any) => void) {
+  constructor(postResponse?: (msg: any) => void, wasmLoader?: WasmModuleLoader) {
     this.state = {
       game: null,
+      wasm: null,
       speed: SimSpeed.PAUSED,
       running: false,
       tickInterval: null,
     };
     this.postResponse = postResponse ?? ((_msg: any) => {});
+    this._wasmLoader = wasmLoader ?? loadWasmModule;
   }
 
-  // ---- Message Router ----
-
-  /** Dispatch an incoming message to the appropriate handler. */
-  handleMessage(msg: any): void {
+  async handleMessage(msg: any): Promise<void> {
     if (!msg || typeof msg.type !== "string") return;
 
     switch (msg.type) {
-      case MessageType.HANDSHAKE:
-        this.postResponse({
-          type: MessageType.HANDSHAKE_ACK,
-          wire_version: WIRE_VERSION,
-          timestamp: Date.now(),
-        });
+      case MessageType.HANDSHAKE: {
+        try {
+          await this.initGame(msg.seed ?? 0, msg.width ?? 128, msg.height ?? 128);
+          this.postResponse({
+            type: MessageType.HANDSHAKE_ACK,
+            wire_version: WIRE_VERSION,
+            timestamp: Date.now(),
+            success: true,
+          });
+        } catch (err: unknown) {
+          this.postResponse({
+            type: MessageType.HANDSHAKE_ACK,
+            wire_version: WIRE_VERSION,
+            timestamp: Date.now(),
+            success: false,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
         break;
+      }
 
       case MessageType.COMMAND:
         this.applyCommand(msg.command_json, msg.sequence_id);
@@ -149,48 +145,37 @@ export class SimWorker {
         break;
 
       case MessageType.SAVE_REQUEST:
-        this._handleSaveRequest(msg.slot);
+        this._handleSaveRequest();
         break;
 
       case MessageType.LOAD_REQUEST:
-        this._handleLoadRequest(msg.slot, msg.data);
+        this._handleLoadRequest(msg.data);
         break;
 
       default:
-        // Unknown message types are silently ignored.
         break;
     }
   }
 
-  // ---- Game Lifecycle ----
-
-  /**
-   * Initialise the simulation game with the given parameters.
-   * Uses MockGameHandle until real WASM bindings are available.
-   */
-  initGame(_seed: number, _width: number, _height: number): void {
-    // TODO: Replace with real WASM init:
-    //   const wasm = await import("@townbuilder/engine-wasm");
-    //   this.state.game = wasm.GameHandle.new(seed, width, height);
-    this.state.game = new MockGameHandle();
+  async initGame(seed: number, width: number, height: number): Promise<void> {
+    const wasm = await this._wasmLoader();
+    const ctor = wasm.GameHandle?.new;
+    if (!ctor) {
+      throw new Error("WASM module missing GameHandle constructor");
+    }
+    const game = ctor(seed, width, height);
+    if (!game) {
+      throw new Error("WASM engine init returned no game handle");
+    }
+    this.state.wasm = wasm;
+    this.state.game = game;
     this.state.running = true;
   }
 
-  // ---- Tick Loop ----
-
-  /**
-   * Start the periodic tick loop. Each interval fires `speed` ticks
-   * (so FAST = 2 ticks per interval, ULTRA = 4).
-   */
   startTickLoop(): void {
-    this.stopTickLoop(); // clear any existing loop
-
+    this.stopTickLoop();
     if (this.state.speed === SimSpeed.PAUSED) return;
 
-    const intervalMs = TICK_INTERVAL_MS;
-
-    // Use `setInterval` — available in Worker global scope.
-    // We store the id so we can clear it later.
     this.state.tickInterval = setInterval(() => {
       const ticksThisInterval = this.state.speed as number;
       for (let i = 0; i < ticksThisInterval; i++) {
@@ -203,10 +188,9 @@ export class SimWorker {
           treasury: result.treasury,
         });
       }
-    }, intervalMs) as unknown as number;
+    }, TICK_INTERVAL_MS) as unknown as number;
   }
 
-  /** Stop the tick loop if one is running. */
   stopTickLoop(): void {
     if (this.state.tickInterval !== null) {
       clearInterval(this.state.tickInterval);
@@ -214,31 +198,23 @@ export class SimWorker {
     }
   }
 
-  // ---- Speed Control ----
-
-  /** Change simulation speed and restart the tick loop accordingly. */
   setSpeed(speed: SimSpeed): void {
     this.state.speed = speed;
-    if (this.state.running) {
-      if (speed === SimSpeed.PAUSED) {
-        this.stopTickLoop();
-      } else {
-        this.startTickLoop();
-      }
+    if (!this.state.running) return;
+    if (speed === SimSpeed.PAUSED) {
+      this.stopTickLoop();
+      return;
     }
+    this.startTickLoop();
   }
 
-  // ---- Simulation Operations ----
-
-  /** Execute a single simulation tick and return the result. */
   executeTick(): TickResult {
     if (!this.state.game) {
       return { tick: 0, events: [], population: 0, treasury: 0 };
     }
-    return this.state.game.tick();
+    return parseTickResult(this.state.game.tick());
   }
 
-  /** Apply a command to the simulation and post the result back. */
   applyCommand(commandJson: string, sequenceId: number): void {
     if (!this.state.game) {
       this.postResponse({
@@ -251,10 +227,11 @@ export class SimWorker {
     }
 
     try {
-      const success = this.state.game.apply_command_json(commandJson);
+      const result = parseCommandResult(this.state.game.apply_command_json(commandJson));
       this.postResponse({
         type: MessageType.COMMAND_RESULT,
-        success,
+        success: result.success,
+        error: result.error,
         sequence_id: sequenceId,
       });
     } catch (err: unknown) {
@@ -268,7 +245,6 @@ export class SimWorker {
     }
   }
 
-  /** Serialise the current game state. */
   save(): Uint8Array {
     if (!this.state.game) {
       return new Uint8Array(0);
@@ -276,15 +252,17 @@ export class SimWorker {
     return this.state.game.save();
   }
 
-  /** Load a previously saved game state. */
   load(data: Uint8Array): boolean {
-    if (!this.state.game) {
+    const loader = this.state.wasm?.load_game;
+    if (!loader) {
       return false;
     }
-    return this.state.game.load(data);
+    const game = loader(data);
+    this.state.game = game;
+    this.state.running = true;
+    return true;
   }
 
-  /** Return a snapshot of key simulation statistics. */
   getStats(): { tick: number; population: number; treasury: number } {
     if (!this.state.game) {
       return { tick: 0, population: 0, treasury: 0 };
@@ -296,17 +274,13 @@ export class SimWorker {
     };
   }
 
-  // ---- Private Helpers ----
-
-  private _handleSaveRequest(slot: string): void {
+  private _handleSaveRequest(): void {
     try {
       const data = this.save();
-      // Convert to base64 string for transmission
-      const encoded = _uint8ArrayToBase64(data);
       this.postResponse({
         type: MessageType.SAVE_RESPONSE,
         success: true,
-        data: encoded,
+        data: _uint8ArrayToBase64(data),
       });
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : String(err);
@@ -318,7 +292,7 @@ export class SimWorker {
     }
   }
 
-  private _handleLoadRequest(slot: string, dataStr: string): void {
+  private _handleLoadRequest(dataStr: string): void {
     try {
       const data = _base64ToUint8Array(dataStr ?? "");
       const success = this.load(data);
@@ -337,9 +311,6 @@ export class SimWorker {
   }
 }
 
-// ---- Base64 Utilities ----
-
-/** Convert a Uint8Array to a base64 string (works in Worker scope). */
 export function _uint8ArrayToBase64(bytes: Uint8Array): string {
   let binary = "";
   for (let i = 0; i < bytes.length; i++) {
@@ -348,7 +319,6 @@ export function _uint8ArrayToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-/** Convert a base64 string back to a Uint8Array. */
 export function _base64ToUint8Array(base64: string): Uint8Array {
   if (base64.length === 0) return new Uint8Array(0);
   const binary = atob(base64);
@@ -359,10 +329,6 @@ export function _base64ToUint8Array(base64: string): Uint8Array {
   return bytes;
 }
 
-// ---- Worker Bootstrap ----
-
-// When running in a real Web Worker context, wire up the message handler.
-// This block is guarded so it doesn't execute during unit tests.
 declare const self: any;
 
 if (
@@ -371,10 +337,7 @@ if (
   typeof self.addEventListener === "function"
 ) {
   const worker = new SimWorker((msg: any) => self.postMessage(msg));
-  // Auto-init game on startup (seed=0 until handshake provides real params)
-  worker.initGame(0, 128, 128);
-
   self.addEventListener("message", (event: MessageEvent) => {
-    worker.handleMessage(event.data);
+    void worker.handleMessage(event.data);
   });
 }

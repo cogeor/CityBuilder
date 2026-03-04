@@ -50,6 +50,9 @@ export interface HandshakeMessage {
   readonly type: MessageType.HANDSHAKE;
   readonly wire_version: number;
   readonly timestamp: number;
+  readonly seed?: number;
+  readonly width?: number;
+  readonly height?: number;
 }
 
 /** Handshake acknowledgement sent from worker to main thread. */
@@ -57,6 +60,8 @@ export interface HandshakeAckMessage {
   readonly type: MessageType.HANDSHAKE_ACK;
   readonly wire_version: number;
   readonly timestamp: number;
+  readonly success: boolean;
+  readonly error?: string;
 }
 
 /** Wraps a JSON-serialised command for the simulation. */
@@ -251,5 +256,8 @@ export function createHandshake(): HandshakeMessage {
     type: MessageType.HANDSHAKE,
     wire_version: WIRE_VERSION,
     timestamp: Date.now(),
+    seed: undefined,
+    width: undefined,
+    height: undefined,
   };
 }
