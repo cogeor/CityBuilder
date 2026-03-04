@@ -1,0 +1,11 @@
+export {
+  PALETTE_VERTEX_GLSL,
+  PALETTE_FRAGMENT_GLSL,
+  PALETTE_VERTEX_WGSL,
+  PALETTE_FRAGMENT_WGSL,
+  MaterialChannel,
+  UNIFORM_NAMES,
+  DEFAULT_LIGHTING,
+  NIGHT_LIGHTING,
+  computeLighting,
+} from "./shader_sources.js";
