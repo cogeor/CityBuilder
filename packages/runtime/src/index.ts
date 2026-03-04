@@ -11,3 +11,6 @@ export * from "./plugins/index.js";
 
 // Save/load orchestration
 export * from "./saves/index.js";
+
+// Undo/redo history
+export * from "./history/index.js";
