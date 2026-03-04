@@ -2,5 +2,6 @@
 
 pub mod commands;
 pub mod entity;
+pub mod events;
 pub mod scale;
 pub mod world;
