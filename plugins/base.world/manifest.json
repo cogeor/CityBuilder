@@ -1,0 +1,10 @@
+{
+  "id": "base.world",
+  "name": "Base World",
+  "version": "1.0.0",
+  "description": "Default world settings, map sizes, and country presets",
+  "author": "TownBuilder",
+  "dependencies": [],
+  "activation": "onWorldLoad",
+  "provides": ["world_config"]
+}

@@ -1,0 +1,10 @@
+{
+  "id": "base.terrain",
+  "name": "Base Terrain",
+  "version": "1.0.0",
+  "description": "Default terrain types and generation rules",
+  "author": "TownBuilder",
+  "dependencies": ["base.world"],
+  "activation": "onWorldLoad",
+  "provides": ["terrain_config"]
+}
