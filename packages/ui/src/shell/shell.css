@@ -1,0 +1,183 @@
+/* HUD Shell Layout */
+.hud-shell {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  grid-template-rows: 40px 1fr 48px;
+  grid-template-columns: 280px 1fr;
+  pointer-events: none;
+}
+
+.hud-shell > * {
+  pointer-events: auto;
+}
+
+/* Top Bar */
+.top-bar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  background: rgba(20, 25, 35, 0.92);
+  color: #e0e0e0;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 14px;
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  z-index: 100;
+}
+
+.top-bar__city-name {
+  font-weight: 600;
+  font-size: 16px;
+  color: #fff;
+}
+
+.top-bar__stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+}
+
+.top-bar__stat--positive { color: #4caf50; }
+.top-bar__stat--negative { color: #f44336; }
+
+.top-bar__date {
+  font-variant-numeric: tabular-nums;
+  color: #b0b0b0;
+}
+
+/* Side Panel */
+.side-panel {
+  grid-row: 2;
+  grid-column: 1;
+  background: rgba(20, 25, 35, 0.88);
+  backdrop-filter: blur(8px);
+  overflow-y: auto;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  z-index: 90;
+}
+
+.side-panel--collapsed {
+  width: 0;
+  overflow: hidden;
+}
+
+.side-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-weight: 600;
+}
+
+.side-panel__close {
+  background: none;
+  border: none;
+  color: #808080;
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.side-panel__close:hover { color: #fff; }
+
+/* Bottom Toolbar */
+.bottom-toolbar {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 16px;
+  background: rgba(20, 25, 35, 0.92);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  z-index: 100;
+}
+
+/* Tool Button */
+.tool-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #c0c0c0;
+  cursor: pointer;
+  font-size: 16px;
+  transition: all 0.15s;
+}
+
+.tool-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.tool-btn--active {
+  background: rgba(66, 133, 244, 0.3);
+  border-color: #4285f4;
+  color: #fff;
+}
+
+/* Speed Controls */
+.speed-controls {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.speed-btn {
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #a0a0a0;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.speed-btn--active {
+  background: rgba(76, 175, 80, 0.3);
+  border-color: #4caf50;
+  color: #fff;
+}
+
+/* Notifications */
+.notification-area {
+  position: fixed;
+  top: 48px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 200;
+  pointer-events: auto;
+}
+
+.notification {
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #fff;
+  backdrop-filter: blur(8px);
+  animation: slide-in 0.2s ease-out;
+}
+
+.notification--info { background: rgba(33, 150, 243, 0.85); }
+.notification--warning { background: rgba(255, 152, 0, 0.85); }
+.notification--error { background: rgba(244, 67, 54, 0.85); }
+.notification--success { background: rgba(76, 175, 80, 0.85); }
+
+@keyframes slide-in {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}

@@ -1,5 +1,3 @@
-// @townbuilder/ui — User interface components
-
 export {
   SimSpeed,
   ToolType,
@@ -10,4 +8,4 @@ export {
   type ShellEventHandler,
   DEFAULT_CITY_STATS,
   HudShell,
-} from './shell/index.js';
+} from './shell.js';
