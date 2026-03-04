@@ -20,6 +20,15 @@ export {
   type InspectorEventType,
   type InspectorEventHandler,
   InspectorManager,
+  TaxCategory,
+  ExpenseDepartment,
+  BudgetViewMode,
+  type IncomeItem,
+  type ExpenseItem,
+  type BudgetSnapshot,
+  type BudgetEventType,
+  type BudgetEventHandler,
+  BudgetPanel,
 } from './inspectors/index.js';
 
 export {
@@ -34,3 +43,17 @@ export {
   type ToolEventHandler,
   ToolManager,
 } from './tools/index.js';
+
+export {
+  UIOverlayType,
+  type OverlayButton,
+  type LegendEntry,
+  type OverlayLegend,
+  type MinimapConfig,
+  type MinimapViewport,
+  type OverlayPanelEventType,
+  type OverlayPanelEventHandler,
+  OVERLAY_BUTTONS,
+  OVERLAY_LEGENDS,
+  OverlayPanel,
+} from './overlays/index.js';
