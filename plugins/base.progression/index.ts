@@ -10,3 +10,14 @@ export {
   computeScore,
   ScenarioManager,
 } from "./scenarios.js";
+
+export {
+  EventChainOutcome,
+  type EventChainChoice,
+  type EventChainNode,
+  type EventChainDefinition,
+  SAMPLE_EVENT_CHAINS,
+  getEventChainById,
+  getNodeById,
+  validateChain,
+} from "./event_chains.js";
