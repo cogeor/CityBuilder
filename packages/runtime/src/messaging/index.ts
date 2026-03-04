@@ -38,3 +38,14 @@ export {
   // Helper functions
   createHandshake,
 } from "./types.js";
+
+// Worker manager
+export {
+  // Classes
+  WorkerManager,
+  MockWorker,
+
+  // Interfaces
+  type WorkerManagerState,
+  type IWorkerManager,
+} from "./worker_manager.js";
