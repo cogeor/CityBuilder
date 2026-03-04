@@ -29,3 +29,9 @@ export {
   formatSeverityLabel,
   AdvisorPanel,
 } from './advisor_panel.js';
+
+export {
+  LessonType,
+  type TimelineEvent,
+  LessonsTimeline,
+} from './lessons_timeline.js';

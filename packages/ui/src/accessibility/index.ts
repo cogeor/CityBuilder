@@ -1,0 +1,15 @@
+export {
+  ColorBlindMode,
+  type AccessibilityConfig,
+  DEFAULT_ACCESSIBILITY,
+  type ColorPalette,
+  STANDARD_PALETTE,
+  PROTANOPIA_PALETTE,
+  DEUTERANOPIA_PALETTE,
+  TRITANOPIA_PALETTE,
+  getPaletteForMode,
+  clampFontSize,
+  clampUiScale,
+  applyConfig,
+  AccessibilityManager,
+} from './accessibility.js';

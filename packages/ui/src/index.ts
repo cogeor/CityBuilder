@@ -36,6 +36,9 @@ export {
   type CityMetrics,
   formatSeverityLabel,
   AdvisorPanel,
+  LessonType,
+  type TimelineEvent,
+  LessonsTimeline,
 } from './inspectors/index.js';
 
 export {
@@ -87,3 +90,19 @@ export {
   type ConsoleEntry,
   DevTools,
 } from './devtools/index.js';
+
+export {
+  ColorBlindMode,
+  type AccessibilityConfig,
+  DEFAULT_ACCESSIBILITY,
+  type ColorPalette,
+  STANDARD_PALETTE,
+  PROTANOPIA_PALETTE,
+  DEUTERANOPIA_PALETTE,
+  TRITANOPIA_PALETTE,
+  getPaletteForMode,
+  clampFontSize,
+  clampUiScale,
+  applyConfig,
+  AccessibilityManager,
+} from './accessibility/index.js';
