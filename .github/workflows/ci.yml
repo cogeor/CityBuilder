@@ -98,6 +98,24 @@ jobs:
       - name: Build WASM
         run: wasm-pack build --target web --out-dir pkg
 
+      - name: Optimize WASM binary
+        run: |
+          npm install -g wasm-opt
+          wasm-opt -O3 --enable-simd packages/engine-wasm/pkg/townbuilder_engine_bg.wasm -o packages/engine-wasm/pkg/townbuilder_engine_bg.wasm
+        continue-on-error: true
+        working-directory: ${{ github.workspace }}
+
+      - name: Check WASM binary size
+        run: |
+          SIZE=$(stat -c%s packages/engine-wasm/pkg/townbuilder_engine_bg.wasm 2>/dev/null || stat -f%z packages/engine-wasm/pkg/townbuilder_engine_bg.wasm)
+          echo "WASM binary size: $SIZE bytes"
+          MAX_SIZE=2097152  # 2MB budget
+          if [ "$SIZE" -gt "$MAX_SIZE" ]; then
+            echo "ERROR: WASM binary ($SIZE bytes) exceeds budget ($MAX_SIZE bytes)"
+            exit 1
+          fi
+        working-directory: ${{ github.workspace }}
+
       - name: Upload WASM artifact
         uses: actions/upload-artifact@v4
         with:
