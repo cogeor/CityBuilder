@@ -1,5 +1,6 @@
 //! Core modules: world state, entities, commands, scale, and events.
 
+pub mod alloc_tracker;
 pub mod archetype_traits;
 pub mod archetypes;
 pub mod commands;
