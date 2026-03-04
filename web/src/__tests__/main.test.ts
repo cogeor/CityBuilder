@@ -3,7 +3,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   BootStage,
   DEFAULT_GAME_CONFIG,
-  MAP_SIZE_TILES,
+  MAP_SIZE_PRESETS,
+  resolveMapDimensions,
   updateLoadingProgress,
   hideLoadingScreen,
   showError,
@@ -50,21 +51,27 @@ describe('DEFAULT_GAME_CONFIG', () => {
 
 // ─── MAP_SIZE_TILES ──────────────────────────────────────────────────────────
 
-describe('MAP_SIZE_TILES', () => {
+describe('MAP_SIZE_PRESETS', () => {
   it('has 3 entries', () => {
-    expect(Object.keys(MAP_SIZE_TILES)).toHaveLength(3);
+    expect(Object.keys(MAP_SIZE_PRESETS)).toHaveLength(3);
   });
 
   it('small is 128x128', () => {
-    expect(MAP_SIZE_TILES.small).toEqual({ width: 128, height: 128 });
+    expect(MAP_SIZE_PRESETS.small).toEqual({ width: 128, height: 128 });
   });
 
   it('medium is 192x192', () => {
-    expect(MAP_SIZE_TILES.medium).toEqual({ width: 192, height: 192 });
+    expect(MAP_SIZE_PRESETS.medium).toEqual({ width: 192, height: 192 });
   });
 
   it('large is 256x256', () => {
-    expect(MAP_SIZE_TILES.large).toEqual({ width: 256, height: 256 });
+    expect(MAP_SIZE_PRESETS.large).toEqual({ width: 256, height: 256 });
+  });
+
+  it('resolveMapDimensions reads plugin-backed values', () => {
+    expect(resolveMapDimensions('small')).toEqual({ width: 128, height: 128 });
+    expect(resolveMapDimensions('medium')).toEqual({ width: 192, height: 192 });
+    expect(resolveMapDimensions('large')).toEqual({ width: 256, height: 256 });
   });
 });
 

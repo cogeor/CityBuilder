@@ -1,3 +1,5 @@
+import { MAP_SIZES, getMapSize } from '../../plugins/base.world/presets.js';
+
 /** Boot stages for loading screen */
 export enum BootStage {
   Init = 'init',
@@ -31,12 +33,18 @@ export const DEFAULT_GAME_CONFIG: GameConfig = {
   countryPreset: 'generic',
 };
 
-/** Map size to tile dimensions */
-export const MAP_SIZE_TILES: Record<string, { width: number; height: number }> = {
-  small: { width: 128, height: 128 },
-  medium: { width: 192, height: 192 },
-  large: { width: 256, height: 256 },
-};
+/** Map-size dimensions derived from the base.world plugin. */
+export const MAP_SIZE_PRESETS: Record<string, { width: number; height: number }> =
+  Object.fromEntries(MAP_SIZES.map((preset) => [preset.id, { width: preset.width, height: preset.height }]));
+
+/** Resolve map dimensions from plugin presets, with safe fallback for invalid IDs. */
+export function resolveMapDimensions(mapSize: GameConfig['mapSize']): { width: number; height: number } {
+  const preset = getMapSize(mapSize);
+  if (preset) {
+    return { width: preset.width, height: preset.height };
+  }
+  return MAP_SIZE_PRESETS.medium ?? { width: 192, height: 192 };
+}
 
 /**
  * Update loading screen progress.
@@ -107,7 +115,7 @@ export async function boot(config: GameConfig = DEFAULT_GAME_CONFIG): Promise<vo
       message: `Creating ${config.cityName}...`,
     });
 
-    const mapDims = MAP_SIZE_TILES[config.mapSize] ?? MAP_SIZE_TILES.medium;
+    const mapDims = resolveMapDimensions(config.mapSize);
 
     // Stage 5: Load Assets
     updateLoadingProgress({
