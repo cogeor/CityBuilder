@@ -1,5 +1,4 @@
-// @townbuilder/renderer — WebGL2/WebGPU renderer
-
+// Barrel export for projection module
 export {
   TILE_W,
   TILE_H,
@@ -12,4 +11,4 @@ export {
   tileToScreenCenter,
   isInViewport,
   visibleTileRange,
-} from "./projection/index.js";
+} from "./projection.js";
