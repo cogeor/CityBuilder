@@ -4,7 +4,7 @@
 //! condition against the world state. Specs compose via `CompositeSpec`
 //! to form complete validation pipelines per command type.
 
-use crate::core::commands::CommandError;
+use crate::core::commands::{Command, CommandError};
 use crate::core::world::WorldState;
 use crate::core_types::*;
 
@@ -204,6 +204,35 @@ pub fn demolish_spec(x: i16, y: i16) -> CompositeSpec {
 /// Validates: in-bounds.
 pub fn zone_spec(x: i16, y: i16) -> CompositeSpec {
     CompositeSpec::new().add(Box::new(InBoundsSpec { x, y }))
+}
+
+/// Validate a command using the canonical spec pipeline.
+///
+/// This is the single ownership point for command preconditions.
+pub fn validate_command(world: &WorldState, cmd: &Command) -> Result<(), CommandError> {
+    match cmd {
+        Command::PlaceEntity {
+            archetype_id,
+            x,
+            y,
+            rotation: _,
+        } => {
+            // Footprint/cost are placeholders until archetype lookup is threaded into validation.
+            build_spec(*x, *y, 1, 1, *archetype_id, 0).check(world)
+        }
+        Command::Bulldoze { x, y, .. } => zone_spec(*x, *y).check(world),
+        Command::SetZoning { x, y, .. } => zone_spec(*x, *y).check(world),
+        Command::RemoveEntity { handle }
+        | Command::UpgradeEntity { handle, .. }
+        | Command::ToggleEntity { handle, .. } => {
+            if world.entities.is_valid(*handle) {
+                Ok(())
+            } else {
+                Err(CommandError::InvalidEntity)
+            }
+        }
+        Command::SetPolicy { .. } => Ok(()),
+    }
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
@@ -504,5 +533,27 @@ mod tests {
         let world = make_world();
         let spec = zone_spec(99, 99);
         assert_eq!(spec.check(&world), Err(CommandError::OutOfBounds));
+    }
+
+    #[test]
+    fn validate_command_place_entity_uses_build_specs() {
+        let mut world = make_world();
+        world.tiles.set_terrain(2, 2, TerrainType::Water);
+        let cmd = Command::PlaceEntity {
+            archetype_id: 1,
+            x: 2,
+            y: 2,
+            rotation: 0,
+        };
+        assert_eq!(validate_command(&world, &cmd), Err(CommandError::TileOccupied));
+    }
+
+    #[test]
+    fn validate_command_entity_commands_require_valid_handle() {
+        let world = make_world();
+        let cmd = Command::RemoveEntity {
+            handle: EntityHandle::INVALID,
+        };
+        assert_eq!(validate_command(&world, &cmd), Err(CommandError::InvalidEntity));
     }
 }

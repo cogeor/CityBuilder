@@ -5,6 +5,7 @@
 //! application; invalid commands are rejected with an error.
 
 use crate::core::world::{CityPolicies, WorldState};
+use crate::core::commands_spec;
 use crate::core_types::*;
 use serde::{Deserialize, Serialize};
 
@@ -90,6 +91,8 @@ pub enum CommandEffect {
 
 /// Apply a command to the world state after validation.
 pub fn apply_command(world: &mut WorldState, cmd: &Command) -> CommandResult {
+    commands_spec::validate_command(world, cmd)?;
+
     match cmd {
         Command::PlaceEntity {
             archetype_id,
@@ -97,14 +100,6 @@ pub fn apply_command(world: &mut WorldState, cmd: &Command) -> CommandResult {
             y,
             rotation,
         } => {
-            // Validate bounds
-            if !world.tiles.in_bounds(*x, *y) {
-                return Err(CommandError::OutOfBounds);
-            }
-            // Validate buildable (not water)
-            if !world.is_buildable(*x, *y) {
-                return Err(CommandError::TileOccupied);
-            }
             // Place entity
             match world.place_entity(*archetype_id, *x, *y, *rotation) {
                 Some(handle) => Ok(CommandEffect::EntityPlaced { handle }),
@@ -113,9 +108,6 @@ pub fn apply_command(world: &mut WorldState, cmd: &Command) -> CommandResult {
         }
 
         Command::RemoveEntity { handle } => {
-            if !world.entities.is_valid(*handle) {
-                return Err(CommandError::InvalidEntity);
-            }
             world.remove_entity(*handle);
             Ok(CommandEffect::EntityRemoved { handle: *handle })
         }
@@ -124,9 +116,6 @@ pub fn apply_command(world: &mut WorldState, cmd: &Command) -> CommandResult {
             handle,
             target_level,
         } => {
-            if !world.entities.is_valid(*handle) {
-                return Err(CommandError::InvalidEntity);
-            }
             if *target_level == 0 {
                 return Err(CommandError::InvalidValue);
             }
@@ -149,9 +138,6 @@ pub fn apply_command(world: &mut WorldState, cmd: &Command) -> CommandResult {
         }
 
         Command::Bulldoze { x, y, w, h } => {
-            if !world.tiles.in_bounds(*x, *y) {
-                return Err(CommandError::OutOfBounds);
-            }
             // Remove all entities in the rectangle
             let mut removed = 0u32;
             let handles: Vec<EntityHandle> = world.entities.iter_alive().collect();
@@ -177,9 +163,6 @@ pub fn apply_command(world: &mut WorldState, cmd: &Command) -> CommandResult {
         }
 
         Command::ToggleEntity { handle, enabled } => {
-            if !world.entities.is_valid(*handle) {
-                return Err(CommandError::InvalidEntity);
-            }
             world.entities.set_enabled(*handle, *enabled);
             Ok(CommandEffect::EntityToggled {
                 handle: *handle,
@@ -188,9 +171,6 @@ pub fn apply_command(world: &mut WorldState, cmd: &Command) -> CommandResult {
         }
 
         Command::SetZoning { x, y, w, h, zone } => {
-            if !world.tiles.in_bounds(*x, *y) {
-                return Err(CommandError::OutOfBounds);
-            }
             let mut count = 0u32;
             for dy in 0..*h as i16 {
                 for dx in 0..*w as i16 {
