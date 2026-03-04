@@ -11,3 +11,26 @@ export {
   DEFAULT_CITY_STATS,
   HudShell,
 } from './shell/index.js';
+
+export {
+  InspectorType,
+  type BuildingInfo,
+  type TileInfo,
+  type DistrictInfo,
+  type InspectorEventType,
+  type InspectorEventHandler,
+  InspectorManager,
+} from './inspectors/index.js';
+
+export {
+  ToolState,
+  PlacementValidity,
+  type TileCoord,
+  type ToolCommand,
+  type DragRect,
+  type ValidateCallback,
+  type CostCallback,
+  type ToolEventType,
+  type ToolEventHandler,
+  ToolManager,
+} from './tools/index.js';
