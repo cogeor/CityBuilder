@@ -7,12 +7,14 @@
 //! returned to the caller.
 
 use crate::core::archetypes::ArchetypeRegistry;
-use crate::core::commands::{self, Command, CommandResult};
+use crate::core::commands::{self, Command, CommandEffect, CommandResult, PolicyKey};
+use crate::core::diffs::{DiffCollector, MetricScope, MetricUpdate, StateDiff, WorldDiff};
 use crate::core::events::{EventBus, TimestampedEvent};
 use crate::core::network::RoadGraph;
 use crate::core::world::WorldState;
 use crate::core_types::*;
 use crate::math::rng::Rng;
+use crate::caches::cache_manager::{CacheManager, InvalidationReason};
 use crate::sim::phase_wheel::PhaseWheel;
 use crate::sim::systems::city_events::CityEventState;
 use crate::sim::systems::transport::TrafficGrid;
@@ -28,6 +30,8 @@ pub struct TickOutput {
     pub population: u32,
     /// Current treasury balance after this tick.
     pub treasury: MoneyCents,
+    /// Structured state/metric changes emitted this tick.
+    pub world_diff: WorldDiff,
 }
 
 /// The top-level simulation engine. Owns all state and drives the
@@ -56,6 +60,10 @@ pub struct SimulationEngine {
     pub power_shortage: bool,
     /// Whether the previous tick had a water shortage.
     pub water_shortage: bool,
+    /// Queue of commands applied during phase 1 of the next tick.
+    pub pending_commands: Vec<Command>,
+    /// Cache dirty tracking and invalidation map.
+    pub cache_manager: CacheManager,
 }
 
 impl SimulationEngine {
@@ -81,7 +89,14 @@ impl SimulationEngine {
             population: 0,
             power_shortage: false,
             water_shortage: false,
+            pending_commands: Vec::new(),
+            cache_manager: CacheManager::new(),
         }
+    }
+
+    /// Queue a command for application at the next tick's phase 1.
+    pub fn queue_command(&mut self, cmd: Command) {
+        self.pending_commands.push(cmd);
     }
 
     /// Advance the simulation by one tick.
@@ -92,8 +107,25 @@ impl SimulationEngine {
         // 1. Increment the world tick counter.
         self.world.tick += 1;
         let tick = self.world.tick;
+        let mut diffs = DiffCollector::new();
+        let treasury_before = self.world.treasury;
 
-        // 2. Construction system.
+        // Phase 1: apply queued commands.
+        let queued: Vec<Command> = self.pending_commands.drain(..).collect();
+        let mut invalidation_reasons: Vec<InvalidationReason> = Vec::new();
+        for cmd in &queued {
+            if let Ok(effect) = commands::apply_command(&mut self.world, cmd) {
+                self.collect_command_diff(&mut diffs, &effect);
+                self.collect_invalidation_reason(&mut invalidation_reasons, &effect);
+            }
+        }
+
+        // Phase 2: invalidate caches based on command effects.
+        for reason in invalidation_reasons {
+            self.cache_manager.invalidate(reason);
+        }
+
+        // Phase 3: run systems in stable order.
         crate::sim::systems::construction::tick_construction(
             &mut self.world.entities,
             &self.registry,
@@ -179,6 +211,25 @@ impl SimulationEngine {
         // 11. Adapt phase wheel (placeholder: 0 microseconds measured).
         self.phase_wheel.adapt(0);
 
+        // Phase 4: emit outputs (events + diffs + metrics).
+        if self.world.treasury != treasury_before {
+            diffs.push_diff(StateDiff::TreasuryChanged {
+                old: treasury_before,
+                new_val: self.world.treasury,
+            });
+        }
+        diffs.push_metric(MetricUpdate {
+            metric_id: 1, // population
+            scope: MetricScope::Global,
+            value: self.population as i64,
+        });
+        diffs.push_metric(MetricUpdate {
+            metric_id: 2, // treasury
+            scope: MetricScope::Global,
+            value: self.world.treasury,
+        });
+        let world_diff = WorldDiff::from_collector(tick, &mut diffs);
+
         // 12. Drain all events produced this tick.
         let events = self.events.drain();
 
@@ -187,6 +238,7 @@ impl SimulationEngine {
             events,
             population: self.population,
             treasury: self.world.treasury,
+            world_diff,
         }
     }
 
@@ -195,6 +247,81 @@ impl SimulationEngine {
     /// Delegates to `core::commands::apply_command`.
     pub fn apply_command(&mut self, cmd: &Command) -> CommandResult {
         commands::apply_command(&mut self.world, cmd)
+    }
+
+    fn collect_invalidation_reason(
+        &self,
+        out: &mut Vec<InvalidationReason>,
+        effect: &CommandEffect,
+    ) {
+        match effect {
+            CommandEffect::EntityPlaced { .. } => out.push(InvalidationReason::BuildingPlaced),
+            CommandEffect::EntityRemoved { .. } | CommandEffect::TilesBulldozed { .. } => {
+                out.push(InvalidationReason::BuildingRemoved)
+            }
+            CommandEffect::PolicyChanged { .. } => out.push(InvalidationReason::PolicyChanged),
+            CommandEffect::EntityUpgraded { .. }
+            | CommandEffect::EntityToggled { .. }
+            | CommandEffect::ZoningApplied { .. } => {}
+        }
+    }
+
+    fn collect_command_diff(&self, collector: &mut DiffCollector, effect: &CommandEffect) {
+        match effect {
+            CommandEffect::EntityPlaced { handle } => {
+                if let Some(pos) = self.world.entities.get_pos(*handle) {
+                    let archetype = self.world.entities.get_archetype(*handle).unwrap_or(0);
+                    collector.push_diff(StateDiff::EntityAdded {
+                        handle: *handle,
+                        archetype,
+                        pos,
+                    });
+                }
+            }
+            CommandEffect::EntityRemoved { handle } => {
+                collector.push_diff(StateDiff::EntityRemoved {
+                    handle: *handle,
+                    pos: TileCoord::new(0, 0),
+                });
+            }
+            CommandEffect::EntityUpgraded { handle, new_level } => {
+                collector.push_diff(StateDiff::EntityUpdated {
+                    handle: *handle,
+                    field: crate::core::diffs::EntityField::Level,
+                    old_value: 0,
+                    new_value: *new_level as u32,
+                });
+            }
+            CommandEffect::PolicyChanged { key, old_value, new_value } => {
+                collector.push_diff(StateDiff::PolicyChanged {
+                    key: policy_key_name(*key).to_string(),
+                    old_value: *old_value as u32,
+                    new_value: *new_value as u32,
+                });
+            }
+            CommandEffect::EntityToggled { handle, enabled } => {
+                collector.push_diff(StateDiff::EntityUpdated {
+                    handle: *handle,
+                    field: crate::core::diffs::EntityField::Enabled,
+                    old_value: 0,
+                    new_value: u32::from(*enabled),
+                });
+            }
+            CommandEffect::TilesBulldozed { .. } | CommandEffect::ZoningApplied { .. } => {}
+        }
+    }
+}
+
+fn policy_key_name(key: PolicyKey) -> &'static str {
+    match key {
+        PolicyKey::ResidentialTax => "residential_tax",
+        PolicyKey::CommercialTax => "commercial_tax",
+        PolicyKey::IndustrialTax => "industrial_tax",
+        PolicyKey::PoliceBudget => "police_budget",
+        PolicyKey::FireBudget => "fire_budget",
+        PolicyKey::HealthBudget => "health_budget",
+        PolicyKey::EducationBudget => "education_budget",
+        PolicyKey::TransportBudget => "transport_budget",
     }
 }
 
@@ -474,5 +601,83 @@ mod tests {
         }
 
         assert_eq!(engine.world.tick, 500);
+    }
+
+    #[test]
+    fn queued_command_applied_during_tick_phase_1() {
+        let mut engine = make_engine(42);
+        assert_eq!(engine.world.entities.count(), 0);
+
+        engine.queue_command(Command::PlaceEntity {
+            archetype_id: 1,
+            x: 4,
+            y: 4,
+            rotation: 0,
+        });
+
+        let out = engine.tick();
+        assert_eq!(engine.world.entities.count(), 1);
+        assert_eq!(out.world_diff.tick, 1);
+        assert!(!out.world_diff.diffs.is_empty());
+    }
+
+    #[test]
+    fn queued_policy_command_invalidates_economic_cache() {
+        let mut engine = make_engine(42);
+        // mark clean first so we can assert invalidation.
+        engine
+            .cache_manager
+            .mark_clean(crate::caches::cache_manager::CacheType::EconomicAggregates);
+        assert!(!engine
+            .cache_manager
+            .is_dirty(crate::caches::cache_manager::CacheType::EconomicAggregates));
+
+        engine.queue_command(Command::SetPolicy {
+            key: PolicyKey::ResidentialTax,
+            value: 12,
+        });
+        let _ = engine.tick();
+
+        assert!(engine
+            .cache_manager
+            .is_dirty(crate::caches::cache_manager::CacheType::EconomicAggregates));
+    }
+
+    #[test]
+    fn tick_output_emits_metric_updates() {
+        let mut engine = make_engine(42);
+        let out = engine.tick();
+        assert!(!out.world_diff.metrics.is_empty());
+        assert_eq!(out.world_diff.metrics[0].scope, MetricScope::Global);
+    }
+
+    #[test]
+    fn phase_order_commands_then_systems() {
+        let world = WorldState::new(MapSize::new(32, 32), 42);
+        let mut registry = ArchetypeRegistry::new();
+        let road_graph = RoadGraph::new();
+
+        // Build time 1 means construction should complete in the same tick
+        // only if command application happens before system execution.
+        registry.register(make_residential(1, 1));
+        let mut engine = SimulationEngine::new(world, registry, road_graph);
+
+        engine.queue_command(Command::PlaceEntity {
+            archetype_id: 1,
+            x: 5,
+            y: 5,
+            rotation: 0,
+        });
+
+        let out = engine.tick();
+
+        let completed = out
+            .events
+            .iter()
+            .any(|e| matches!(e.event, crate::core::events::SimEvent::BuildingCompleted { .. }));
+        assert!(
+            completed,
+            "Expected BuildingCompleted in same tick, proving phase order is command -> systems"
+        );
     }
 }
