@@ -1,0 +1,10 @@
+{
+  "id": "base.networks",
+  "name": "Base Networks",
+  "version": "1.0.0",
+  "description": "Road types and network configuration",
+  "author": "TownBuilder",
+  "dependencies": ["base.world"],
+  "activation": "onWorldLoad",
+  "provides": ["network_config"]
+}

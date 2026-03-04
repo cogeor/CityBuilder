@@ -1,0 +1,10 @@
+{
+  "id": "base.economy",
+  "name": "Base Economy",
+  "version": "1.0.0",
+  "description": "Economy configuration, tax rates, and production tables",
+  "author": "TownBuilder",
+  "dependencies": ["base.world"],
+  "activation": "onWorldLoad",
+  "provides": ["economy_config"]
+}
