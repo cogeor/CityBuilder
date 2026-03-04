@@ -1,0 +1,20 @@
+// Barrel export for overlays module
+export {
+  OverlayType,
+  ZoneDisplayType,
+  StatusIconType,
+  type OverlayColor,
+  type GradientStop,
+  type OverlayConfig,
+  type OverlayRenderStats,
+  OVERLAY_SPRITE_ID,
+  STATUS_ICON_SPRITES,
+  GRADIENT_GREEN_RED,
+  GRADIENT_BLUE_BROWN,
+  GRADIENT_COOL_HOT,
+  ZONE_COLORS,
+  DEFAULT_OVERLAY_CONFIGS,
+  sampleGradient,
+  normalizeHeatmapValue,
+  OverlayRenderer,
+} from "./overlay_renderer.js";

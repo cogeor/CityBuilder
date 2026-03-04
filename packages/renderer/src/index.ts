@@ -65,3 +65,34 @@ export {
   computeTerrainEdgeMask,
   ChunkBuilder,
 } from "./chunks/index.js";
+
+export {
+  AutomataType,
+  type DynamicEntity,
+  type SelectionHighlight,
+  type DynamicRenderStats,
+  interpolatePosition,
+  computeAnimFrame,
+  computeSpriteOffset,
+  DynamicRenderer,
+} from "./dynamic/index.js";
+
+export {
+  OverlayType,
+  ZoneDisplayType,
+  StatusIconType,
+  type OverlayColor,
+  type GradientStop,
+  type OverlayConfig,
+  type OverlayRenderStats,
+  OVERLAY_SPRITE_ID,
+  STATUS_ICON_SPRITES,
+  GRADIENT_GREEN_RED,
+  GRADIENT_BLUE_BROWN,
+  GRADIENT_COOL_HOT,
+  ZONE_COLORS,
+  DEFAULT_OVERLAY_CONFIGS,
+  sampleGradient,
+  normalizeHeatmapValue,
+  OverlayRenderer,
+} from "./overlays/index.js";
