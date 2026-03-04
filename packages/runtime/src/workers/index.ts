@@ -37,3 +37,20 @@ export {
   // Classes
   RenderWorker,
 } from "./render.worker.js";
+
+export {
+  // Enums
+  WorkerLifecycleState,
+
+  // Interfaces
+  type StateTransition,
+
+  // Types
+  type TransitionGuard,
+
+  // Constants
+  VALID_TRANSITIONS,
+
+  // Classes
+  WorkerStateMachine,
+} from "./state_machine.js";
