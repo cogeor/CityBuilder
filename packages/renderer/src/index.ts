@@ -43,3 +43,25 @@ export {
   unpackInstance,
   RenderInstanceBuilder,
 } from "./types/index.js";
+
+export {
+  CHUNK_SIZE,
+  MAX_CACHED_CHUNKS,
+  MAX_REBUILD_PER_FRAME,
+  type ChunkKey,
+  type ChunkData,
+  type ChunkCacheStats,
+  ChunkCache,
+} from "./chunks/index.js";
+
+export {
+  TerrainType,
+  ZoneType,
+  RoadType,
+  type TileRenderData,
+  type SpriteMapping,
+  type SpriteResolver,
+  computeRoadMask,
+  computeTerrainEdgeMask,
+  ChunkBuilder,
+} from "./chunks/index.js";
