@@ -1,0 +1,14 @@
+{
+  "name": "@townbuilder/renderer",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "dependencies": {
+    "@townbuilder/core-types": "workspace:*"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  }
+}

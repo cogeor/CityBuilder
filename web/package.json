@@ -1,0 +1,20 @@
+{
+  "name": "@townbuilder/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@townbuilder/core-types": "workspace:*",
+    "@townbuilder/renderer": "workspace:*",
+    "@townbuilder/ui": "workspace:*",
+    "@townbuilder/runtime": "workspace:*"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0"
+  }
+}

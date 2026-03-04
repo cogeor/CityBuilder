@@ -1,0 +1,27 @@
+# Delegate runtime files
+.delegate/
+
+# Rust
+target/
+*.wasm
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Build output
+plugins_build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
