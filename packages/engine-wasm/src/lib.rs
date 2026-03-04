@@ -7,4 +7,5 @@ pub mod core_types;
 pub mod io;
 pub mod math;
 pub mod path;
+pub mod render_export;
 pub mod sim;
