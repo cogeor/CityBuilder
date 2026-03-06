@@ -4,6 +4,8 @@
 //! and a `DefaultMapGenerator` implementation using simplex-like hash noise.
 //! All generation is seeded and deterministic: same seed + params = identical map.
 
+use crate::core_types::TerrainType;
+
 // ---- Map Generation Parameters ------------------------------------------------
 
 /// Map generation parameters controlling terrain characteristics.
@@ -44,6 +46,21 @@ pub enum GenTerrain {
     Hill = 5,
     Mountain = 6,
     River = 7,
+}
+
+impl From<GenTerrain> for TerrainType {
+    fn from(g: GenTerrain) -> Self {
+        match g {
+            GenTerrain::DeepWater    => TerrainType::Water,
+            GenTerrain::ShallowWater => TerrainType::Water,
+            GenTerrain::River        => TerrainType::Water,
+            GenTerrain::Sand         => TerrainType::Sand,
+            GenTerrain::Grass        => TerrainType::Grass,
+            GenTerrain::Forest       => TerrainType::Forest,
+            GenTerrain::Hill         => TerrainType::Rock,
+            GenTerrain::Mountain     => TerrainType::Rock,
+        }
+    }
 }
 
 // ---- Generated Tile ----------------------------------------------------------
@@ -828,5 +845,24 @@ mod tests {
         let gen = DefaultMapGenerator;
         let map = gen.generate(42, 0, 0, &MapGenParams::default());
         assert_eq!(map.tiles.len(), 0);
+    }
+
+    // 21. From<GenTerrain> for TerrainType — all variants.
+    #[test]
+    fn gen_terrain_to_terrain_type_water_variants() {
+        use crate::core_types::TerrainType;
+        assert_eq!(TerrainType::from(GenTerrain::DeepWater),    TerrainType::Water);
+        assert_eq!(TerrainType::from(GenTerrain::ShallowWater), TerrainType::Water);
+        assert_eq!(TerrainType::from(GenTerrain::River),        TerrainType::Water);
+    }
+
+    #[test]
+    fn gen_terrain_to_terrain_type_land_variants() {
+        use crate::core_types::TerrainType;
+        assert_eq!(TerrainType::from(GenTerrain::Sand),     TerrainType::Sand);
+        assert_eq!(TerrainType::from(GenTerrain::Grass),    TerrainType::Grass);
+        assert_eq!(TerrainType::from(GenTerrain::Forest),   TerrainType::Forest);
+        assert_eq!(TerrainType::from(GenTerrain::Hill),     TerrainType::Rock);
+        assert_eq!(TerrainType::from(GenTerrain::Mountain), TerrainType::Rock);
     }
 }
