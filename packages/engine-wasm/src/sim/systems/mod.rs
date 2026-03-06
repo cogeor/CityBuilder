@@ -3,6 +3,8 @@
 pub mod buildings;
 pub mod city_events;
 pub mod effects;
+pub mod zone_demand;
+pub mod suitability;
 pub mod stripe_walk;
 pub mod utility_system;
 pub mod utility_registry;
