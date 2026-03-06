@@ -19,3 +19,4 @@ pub mod stats_recorder;
 pub mod tile_constants;
 pub mod tilemap;
 pub mod world;
+pub mod world_vars;
