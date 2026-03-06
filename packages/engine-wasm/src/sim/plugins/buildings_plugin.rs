@@ -46,6 +46,7 @@ impl SimulationPlugin for BuildingsPlugin {
             DevelopmentConfig::default(),
             state,
             demand,
+            Some((w.analysis_maps, w.city_center)),
         );
     }
 }

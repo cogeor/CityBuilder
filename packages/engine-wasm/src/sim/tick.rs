@@ -16,7 +16,7 @@ use crate::core_types::*;
 use crate::math::rng::Rng;
 use crate::caches::analysis_maps::AnalysisMaps;
 use crate::caches::cache_manager::{CacheManager, InvalidationReason};
-use crate::sim::systems::effects::{propagate_effects, compute_crime_map, EffectMap};
+use crate::sim::systems::effects::{propagate_effects, EffectMap};
 use crate::sim::phase_wheel::PhaseWheel;
 use crate::sim::plugin::{SimulationPlugin, SimWorld};
 use crate::sim::plugins::{
@@ -168,6 +168,8 @@ impl SimulationEngine {
         }
 
         // Phase 3a: run plugin systems (construction, population, jobs, transport, …).
+        let map_size = self.world.map_size();
+        let city_center = (map_size.width as i16 / 2, map_size.height as i16 / 2);
         let mut sim_world = SimWorld {
             world: &mut self.world,
             registry: &self.registry,
@@ -178,6 +180,8 @@ impl SimulationEngine {
             city_event_state: &mut self.city_event_state,
             population: &mut self.population,
             phase_wheel: &self.phase_wheel,
+            analysis_maps: &self.analysis_maps,
+            city_center,
         };
         // plugins is temporarily taken out so we can call &mut self.plugins
         // while also holding &mut self.world etc.
@@ -197,16 +201,13 @@ impl SimulationEngine {
         );
 
         // Phase 3c: rebuild overlay effect maps (every 4 ticks, Utilities phase).
+        // Crime is driven purely by building effects (propagate_effects writes the
+        // Crime layer from explicit EffectKind::Crime entries on archetypes).
+        // The SimCity global CrimeScan formula (compute_crime_map) is deferred until
+        // police stations are implemented and police coverage overlays are populated.
         use crate::sim::phase_wheel::Phase;
         if self.phase_wheel.should_run_expensive(tick, Phase::Utilities) {
             propagate_effects(&mut self.effect_map, &self.world.entities, &self.registry);
-            // Build a land-value slice from current analysis_maps for the crime formula.
-            let lv_len = self.effect_map.len();
-            let land_value: Vec<i16> = (0..lv_len)
-                .map(|i| self.analysis_maps.land_value.get_by_index(i) as i16)
-                .collect();
-            let pop_density: Vec<u16> = vec![0u16; lv_len]; // placeholder; will be per-tile later
-            compute_crime_map(&mut self.effect_map, &land_value, &pop_density);
             self.analysis_maps.rebuild_from_effects(&self.effect_map);
         }
 

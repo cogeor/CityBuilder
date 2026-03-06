@@ -1,5 +1,6 @@
 //! SimulationPlugin trait and SimWorld context.
 
+use crate::caches::analysis_maps::AnalysisMaps;
 use crate::core::archetypes::ArchetypeRegistry;
 use crate::core::commands::Command;
 use crate::core::events::EventBus;
@@ -24,6 +25,10 @@ pub struct SimWorld<'a> {
     pub population: &'a mut u32,
     /// Phase wheel for gating expensive computation.
     pub phase_wheel: &'a PhaseWheel,
+    /// Derived analysis overlays (read-only) for suitability scoring.
+    pub analysis_maps: &'a AnalysisMaps,
+    /// Tile coordinates of the city centre (used for commercial scoring).
+    pub city_center: (i16, i16),
 }
 
 /// One pluggable simulation system.

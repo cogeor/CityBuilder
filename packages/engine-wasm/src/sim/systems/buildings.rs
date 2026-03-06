@@ -7,11 +7,13 @@
 //! pair so tiles fill in spatial order rather than random scatter, matching
 //! the SimCity scan-line walk pattern.
 
+use crate::caches::analysis_maps::AnalysisMaps;
 use crate::core::archetypes::{ArchetypeDefinition, ArchetypeRegistry, ArchetypeTag};
 use crate::core::world::WorldState;
 use crate::core_types::{EntityHandle, StatusFlags, Tick, ZoneDensity, ZoneType};
 use crate::math::rng::Rng;
 use crate::sim::systems::stripe_walk::StripeWalkIter;
+use crate::sim::systems::suitability::{tile_suitability, GROWTH_THRESHOLD};
 
 // ─── Development demand valves ────────────────────────────────────────────────
 
@@ -139,6 +141,10 @@ pub struct DevelopmentConfig {
     pub tick_interval: u32,
     pub max_attempts_per_tick: u16,
     pub max_placements_per_tick: u16,
+    /// Minimum suitability score threshold for development to fire.
+    /// Growth is blocked when `score.total() <= suitability_threshold`.
+    /// Ignored (no gate) when `analysis_maps` is not provided.
+    pub suitability_threshold: i32,
 }
 
 impl Default for DevelopmentConfig {
@@ -147,6 +153,7 @@ impl Default for DevelopmentConfig {
             tick_interval: 20,
             max_attempts_per_tick: 32,
             max_placements_per_tick: 4,
+            suitability_threshold: GROWTH_THRESHOLD,
         }
     }
 }
@@ -215,7 +222,7 @@ pub fn tick_zoned_development(
     rng: &mut Rng,
 ) -> u32 {
     let mut state = DevelopmentState::new(world.map_size().width, world.map_size().height);
-    tick_zoned_development_with_config(world, registry, tick, rng, DevelopmentConfig::default(), &mut state, ZoneDemand::FULL)
+    tick_zoned_development_with_config(world, registry, tick, rng, DevelopmentConfig::default(), &mut state, ZoneDemand::FULL, None)
 }
 
 pub fn tick_zoned_development_with_config(
@@ -226,6 +233,7 @@ pub fn tick_zoned_development_with_config(
     config: DevelopmentConfig,
     state: &mut DevelopmentState,
     demand: ZoneDemand,
+    suitability_ctx: Option<(&AnalysisMaps, (i16, i16))>,
 ) -> u32 {
     if config.tick_interval == 0 || tick % config.tick_interval as u64 != 0 {
         return 0;
@@ -276,6 +284,19 @@ pub fn tick_zoned_development_with_config(
         let Some((x, y)) = walker.next_zoned(&world.tiles, zone, density) else {
             continue;
         };
+
+        // Suitability gate: if analysis maps are provided, score the tile and
+        // block growth when suitability is too low (hard blocks return None).
+        if let Some((maps, city_center)) = suitability_ctx {
+            let Some(tile) = world.tiles.get(x as u32, y as u32) else {
+                continue;
+            };
+            match tile_suitability(&tile, x, y, maps, city_center, zone) {
+                None => continue,
+                Some(score) if score.total() <= config.suitability_threshold => continue,
+                _ => {}
+            }
+        }
 
         if is_occupied(&occupied, map_size.width, x, y) {
             continue;
@@ -505,9 +526,11 @@ mod tests {
                 tick_interval: 1,
                 max_attempts_per_tick: 128,
                 max_placements_per_tick: 8,
+                suitability_threshold: GROWTH_THRESHOLD,
             },
             &mut state,
             ZoneDemand::FULL,
+            None,
         );
 
         assert!(placed > 0);
@@ -537,9 +560,11 @@ mod tests {
                 tick_interval: 1,
                 max_attempts_per_tick: 16,
                 max_placements_per_tick: 4,
+                suitability_threshold: GROWTH_THRESHOLD,
             },
             &mut state,
             ZoneDemand::FULL,
+            None,
         );
 
         assert_eq!(placed, 0);
@@ -567,9 +592,10 @@ mod tests {
             &registry,
             1,
             &mut rng,
-            DevelopmentConfig { tick_interval: 1, max_attempts_per_tick: 64, max_placements_per_tick: 8 },
+            DevelopmentConfig { tick_interval: 1, max_attempts_per_tick: 64, max_placements_per_tick: 8, suitability_threshold: GROWTH_THRESHOLD },
             &mut state,
             no_demand,
+            None,
         );
 
         assert_eq!(placed, 0, "residential should not develop when demand is 0");
