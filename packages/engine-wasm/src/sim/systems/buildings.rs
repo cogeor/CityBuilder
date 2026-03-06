@@ -416,7 +416,7 @@ fn can_place_archetype(
     x: i16,
     y: i16,
     zone: ZoneType,
-    occupied: &[bool],
+    occupied: &[u64],
 ) -> bool {
     for dy in 0..def.footprint_h as i16 {
         for dx in 0..def.footprint_w as i16 {
@@ -442,9 +442,13 @@ fn can_place_archetype(
     true
 }
 
-fn build_occupied_mask(world: &WorldState, registry: &ArchetypeRegistry) -> Vec<bool> {
+/// Build the occupied bitset: one bit per tile, set for every tile covered by
+/// an entity's footprint.  Uses `Vec<u64>` words — 8× more compact than `Vec<bool>`.
+fn build_occupied_mask(world: &WorldState, registry: &ArchetypeRegistry) -> Vec<u64> {
     let size = world.map_size();
-    let mut mask = vec![false; size.area() as usize];
+    let tiles = size.area() as usize;
+    let word_count = (tiles + 63) / 64;
+    let mut mask = vec![0u64; word_count];
     for handle in world.entities.iter_alive() {
         mark_entity_footprint(&mut mask, size.width, world, registry, handle);
     }
@@ -452,7 +456,7 @@ fn build_occupied_mask(world: &WorldState, registry: &ArchetypeRegistry) -> Vec<
 }
 
 fn mark_entity_footprint(
-    mask: &mut [bool],
+    mask: &mut [u64],
     map_width: u16,
     world: &WorldState,
     registry: &ArchetypeRegistry,
@@ -470,7 +474,7 @@ fn mark_entity_footprint(
     mark_occupied(mask, map_width, pos.x, pos.y, w, h);
 }
 
-fn mark_occupied(mask: &mut [bool], map_width: u16, x: i16, y: i16, w: u8, h: u8) {
+fn mark_occupied(mask: &mut [u64], map_width: u16, x: i16, y: i16, w: u8, h: u8) {
     for dy in 0..h as i16 {
         for dx in 0..w as i16 {
             let tx = x + dx;
@@ -479,19 +483,25 @@ fn mark_occupied(mask: &mut [bool], map_width: u16, x: i16, y: i16, w: u8, h: u8
                 continue;
             }
             let idx = ty as usize * map_width as usize + tx as usize;
-            if idx < mask.len() {
-                mask[idx] = true;
+            let word = idx / 64;
+            if word < mask.len() {
+                mask[word] |= 1u64 << (idx % 64);
             }
         }
     }
 }
 
-fn is_occupied(mask: &[bool], map_width: u16, x: i16, y: i16) -> bool {
+#[inline]
+fn is_occupied(mask: &[u64], map_width: u16, x: i16, y: i16) -> bool {
     if x < 0 || y < 0 {
         return true;
     }
     let idx = y as usize * map_width as usize + x as usize;
-    mask.get(idx).copied().unwrap_or(true)
+    let word = idx / 64;
+    match mask.get(word) {
+        Some(&w) => (w >> (idx % 64)) & 1 != 0,
+        None => true, // out of bounds → treat as occupied
+    }
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
