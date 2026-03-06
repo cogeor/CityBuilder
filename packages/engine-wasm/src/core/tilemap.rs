@@ -327,10 +327,21 @@ impl TileMap {
     }
 
     /// Iterator yielding `(x, y, tile)` for every tile in row-major order.
+    ///
+    /// Uses incremental (x, y) counters rather than modulo/division per step,
+    /// eliminating integer division from the hot iteration path.
     pub fn iter(&self) -> impl Iterator<Item = (u32, u32, TileValue)> + '_ {
-        self.tiles.iter().enumerate().map(move |(i, &t)| {
-            let (x, y) = index_to_coord(i, self.width);
-            (x, y, t)
+        let width = self.width;
+        let mut x = 0u32;
+        let mut y = 0u32;
+        self.tiles.iter().map(move |&t| {
+            let out = (x, y, t);
+            x += 1;
+            if x >= width {
+                x = 0;
+                y += 1;
+            }
+            out
         })
     }
 }
