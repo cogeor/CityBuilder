@@ -132,10 +132,10 @@ fn collect_zone_archetypes(registry: &ArchetypeRegistry) -> ZoneArchetypes {
 fn zone_candidates_for(zone: ZoneType, candidates: &ZoneArchetypes) -> Option<&[u16]> {
     match zone {
         ZoneType::Residential => Some(&candidates.residential),
-        ZoneType::Commercial => Some(&candidates.commercial),
-        ZoneType::Industrial => Some(&candidates.industrial),
-        ZoneType::Civic => Some(&candidates.civic),
-        ZoneType::None => None,
+        ZoneType::Commercial  => Some(&candidates.commercial),
+        ZoneType::Industrial  => Some(&candidates.industrial),
+        ZoneType::Civic       => Some(&candidates.civic),
+        ZoneType::None | ZoneType::Park | ZoneType::Transport => None,
     }
 }
 

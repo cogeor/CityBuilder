@@ -227,13 +227,21 @@ fn terrain_from_u8(v: u8) -> Result<TerrainType, SaveError> {
 
 fn kind_from_u8(b: u8) -> Result<TileKind, SaveError> {
     match b {
-        0 => Ok(TileKind::Empty),
-        1 => Ok(TileKind::Road),
-        2 => Ok(TileKind::Zone),
-        3 => Ok(TileKind::Building),
-        4 => Ok(TileKind::Utility),
-        5 => Ok(TileKind::PowerLine),
-        6 => Ok(TileKind::WaterPipe),
+        0  => Ok(TileKind::Empty),
+        1  => Ok(TileKind::Water),
+        2  => Ok(TileKind::Nature),
+        3  => Ok(TileKind::Rubble),
+        4  => Ok(TileKind::Flood),
+        5  => Ok(TileKind::Radiation),
+        6  => Ok(TileKind::Fire),
+        7  => Ok(TileKind::Road),
+        8  => Ok(TileKind::PowerLine),
+        9  => Ok(TileKind::Rail),
+        10 => Ok(TileKind::Zone),
+        11 => Ok(TileKind::Building),
+        12 => Ok(TileKind::Port),
+        13 => Ok(TileKind::Airport),
+        14 => Ok(TileKind::Special),
         _ => Err(SaveError::CorruptData(format!("unknown TileKind byte: {}", b))),
     }
 }
@@ -245,6 +253,8 @@ fn zone_from_u8(v: u8) -> Result<ZoneType, SaveError> {
         2 => Ok(ZoneType::Commercial),
         3 => Ok(ZoneType::Industrial),
         4 => Ok(ZoneType::Civic),
+        5 => Ok(ZoneType::Park),
+        6 => Ok(ZoneType::Transport),
         _ => Err(SaveError::CorruptData(format!("invalid zone type: {}", v))),
     }
 }

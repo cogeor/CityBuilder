@@ -15,18 +15,27 @@ use crate::core_types::{TerrainType, ZoneType};
 ///
 /// `Empty` means bare terrain with no overlay placed on top.
 /// `Zone` means the tile is zoned but no building has been placed yet.
-/// `Utility` is a catch-all for infrastructure that is neither a road, power
-/// line, nor water pipe (e.g. a pump station base tile).
+/// `Special` is a catch-all for infrastructure not covered by a dedicated
+/// variant (e.g. a pump station base tile). Water-pipe infrastructure is
+/// represented by `TileFlags::WATERED`, not a separate kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum TileKind {
-    Empty     = 0,
-    Road      = 1,
-    Zone      = 2,
-    Building  = 3,
-    Utility   = 4,
-    PowerLine = 5,
-    WaterPipe = 6,
+    Empty     =  0,
+    Water     =  1,
+    Nature    =  2,
+    Rubble    =  3,
+    Flood     =  4,
+    Radiation =  5,
+    Fire      =  6,
+    Road      =  7,
+    PowerLine =  8,
+    Rail      =  9,
+    Zone      = 10,
+    Building  = 11,
+    Port      = 12,
+    Airport   = 13,
+    Special   = 14,
 }
 
 impl Default for TileKind {
@@ -317,6 +326,19 @@ impl TileMap {
 mod tests {
     use super::*;
     use std::mem;
+
+    // ── TileKind discriminants ───────────────────────────────────────────────
+
+    #[test]
+    fn tile_kind_discriminants() {
+        assert_eq!(TileKind::Empty     as u8,  0);
+        assert_eq!(TileKind::Water     as u8,  1);
+        assert_eq!(TileKind::Road      as u8,  7);
+        assert_eq!(TileKind::PowerLine as u8,  8);
+        assert_eq!(TileKind::Zone      as u8, 10);
+        assert_eq!(TileKind::Building  as u8, 11);
+        assert_eq!(TileKind::Special   as u8, 14);
+    }
 
     // ── Size assertions ──────────────────────────────────────────────────────
 

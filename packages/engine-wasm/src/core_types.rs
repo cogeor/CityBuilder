@@ -197,11 +197,30 @@ pub const TILE_UNITS_PER_TILE: u32 = 1024;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum ZoneType {
-    None = 0,
+    None        = 0,
     Residential = 1,
-    Commercial = 2,
-    Industrial = 3,
-    Civic = 4,
+    Commercial  = 2,
+    Industrial  = 3,
+    Civic       = 4,
+    Park        = 5,
+    Transport   = 6,
+}
+
+// ─── ZoneDensity ────────────────────────────────────────────────────────────
+
+/// Zone build density.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[repr(u8)]
+pub enum ZoneDensity {
+    Low    = 0,
+    Medium = 1,
+    High   = 2,
+}
+
+impl Default for ZoneDensity {
+    fn default() -> Self {
+        ZoneDensity::Low
+    }
 }
 
 // ─── TerrainType ────────────────────────────────────────────────────────────
@@ -421,11 +440,26 @@ mod tests {
 
     #[test]
     fn zone_type_values() {
-        assert_eq!(ZoneType::None as u8, 0);
+        assert_eq!(ZoneType::None        as u8, 0);
         assert_eq!(ZoneType::Residential as u8, 1);
-        assert_eq!(ZoneType::Commercial as u8, 2);
-        assert_eq!(ZoneType::Industrial as u8, 3);
-        assert_eq!(ZoneType::Civic as u8, 4);
+        assert_eq!(ZoneType::Commercial  as u8, 2);
+        assert_eq!(ZoneType::Industrial  as u8, 3);
+        assert_eq!(ZoneType::Civic       as u8, 4);
+        assert_eq!(ZoneType::Park        as u8, 5);
+        assert_eq!(ZoneType::Transport   as u8, 6);
+    }
+
+    #[test]
+    fn zone_density_values() {
+        assert_eq!(ZoneDensity::Low    as u8, 0);
+        assert_eq!(ZoneDensity::Medium as u8, 1);
+        assert_eq!(ZoneDensity::High   as u8, 2);
+        assert_eq!(ZoneDensity::default(), ZoneDensity::Low);
+    }
+
+    #[test]
+    fn zone_density_is_one_byte() {
+        assert_eq!(std::mem::size_of::<ZoneDensity>(), 1);
     }
 
     #[test]
