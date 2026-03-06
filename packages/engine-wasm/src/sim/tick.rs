@@ -16,6 +16,12 @@ use crate::core_types::*;
 use crate::math::rng::Rng;
 use crate::caches::cache_manager::{CacheManager, InvalidationReason};
 use crate::sim::phase_wheel::PhaseWheel;
+use crate::sim::plugin::{SimulationPlugin, SimWorld};
+use crate::sim::plugins::{
+    BuildingsPlugin, CityEventsPlugin, ConstructionPlugin,
+    FinancePlugin, JobsPlugin, PopulationPlugin,
+    PowerPlugin, TransportPlugin, WaterPlugin,
+};
 use crate::sim::systems::city_events::CityEventState;
 use crate::sim::systems::transport::TrafficGrid;
 
@@ -64,6 +70,8 @@ pub struct SimulationEngine {
     pub pending_commands: Vec<Command>,
     /// Cache dirty tracking and invalidation map.
     pub cache_manager: CacheManager,
+    /// Ordered list of pluggable simulation systems.
+    pub plugins: Vec<Box<dyn SimulationPlugin>>,
 }
 
 impl SimulationEngine {
@@ -91,6 +99,17 @@ impl SimulationEngine {
             water_shortage: false,
             pending_commands: Vec::new(),
             cache_manager: CacheManager::new(),
+            plugins: vec![
+                Box::new(BuildingsPlugin),
+                Box::new(ConstructionPlugin),
+                Box::new(PowerPlugin),
+                Box::new(WaterPlugin),
+                Box::new(PopulationPlugin),
+                Box::new(JobsPlugin),
+                Box::new(TransportPlugin),
+                Box::new(FinancePlugin),
+                Box::new(CityEventsPlugin),
+            ],
         }
     }
 
@@ -131,95 +150,26 @@ impl SimulationEngine {
             self.cache_manager.invalidate(reason);
         }
 
-        // Phase 3: run systems in stable order.
-        crate::sim::systems::buildings::tick_zoned_development(
-            &mut self.world,
-            &self.registry,
-            tick,
-            &mut self.rng,
-        );
-
-        crate::sim::systems::construction::tick_construction(
-            &mut self.world.entities,
-            &self.registry,
-            &mut self.events,
-            tick,
-        );
-
-        // 3. Power distribution.
-        let power_balance = crate::sim::systems::utilities::tick_power(
-            &mut self.world.entities,
-            &self.registry,
-            &mut self.events,
-            tick,
-            self.power_shortage,
-        );
-
-        // 4. Water distribution.
-        let water_balance = crate::sim::systems::utilities::tick_water(
-            &mut self.world.entities,
-            &self.registry,
-            &mut self.events,
-            tick,
-            self.water_shortage,
-        );
-
-        // 5. Population system.
-        let pop_stats = crate::sim::systems::population::tick_population(
-            &self.world.entities,
-            &self.registry,
-            &mut self.events,
-            tick,
-            &mut self.rng,
-            self.population,
-        );
-        self.population = pop_stats.total_population;
-
-        // 6. Jobs system.
-        crate::sim::systems::jobs::tick_jobs(
-            &mut self.world.entities,
-            &self.registry,
-            &mut self.events,
-            tick,
-            self.population,
-        );
-
-        // 7. Transport system.
-        let map_size = self.world.map_size();
-        crate::sim::systems::transport::tick_transport(
-            &mut self.traffic_grid,
-            &self.world.entities,
-            &self.registry,
-            &self.road_graph,
-            &mut self.events,
-            tick,
-            map_size,
-        );
-
-        // 8. Finance system — updates world.treasury in place.
-        crate::sim::systems::finance::tick_finance(
-            &self.world.entities,
-            &self.registry,
-            &mut self.events,
-            tick,
-            &self.world.policies,
-            &mut self.world.treasury,
-            self.population,
-        );
-
-        // 9. City events (fires, crime).
-        crate::sim::systems::city_events::tick_city_events(
-            &mut self.city_event_state,
-            &mut self.world.entities,
-            &mut self.events,
-            &mut self.rng,
-            tick,
-            &self.world.policies,
-        );
-
-        // 10. Update shortage flags for next tick.
-        self.power_shortage = power_balance.has_shortage();
-        self.water_shortage = water_balance.has_shortage();
+        // Phase 3: run systems via plugin loop.
+        let mut sim_world = SimWorld {
+            world: &mut self.world,
+            registry: &self.registry,
+            events: &mut self.events,
+            road_graph: &self.road_graph,
+            rng: &mut self.rng,
+            traffic_grid: &mut self.traffic_grid,
+            city_event_state: &mut self.city_event_state,
+            population: &mut self.population,
+            power_shortage: &mut self.power_shortage,
+            water_shortage: &mut self.water_shortage,
+        };
+        // plugins is temporarily taken out so we can call &mut self.plugins
+        // while also holding &mut self.world etc.
+        let mut plugins = std::mem::take(&mut self.plugins);
+        for plugin in &mut plugins {
+            plugin.tick(&mut sim_world, tick);
+        }
+        self.plugins = plugins;
 
         // 11. Adapt phase wheel (placeholder: 0 microseconds measured).
         self.phase_wheel.adapt(0);

@@ -1,6 +1,8 @@
 //! Deterministic simulation systems and tick loop.
 
 pub mod phase_wheel;
+pub mod plugin;
+pub mod plugins;
 pub mod scheduling;
 pub mod systems;
 pub mod tick;
