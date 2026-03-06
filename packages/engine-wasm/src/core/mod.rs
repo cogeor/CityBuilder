@@ -11,6 +11,7 @@ pub mod entity;
 pub mod events;
 pub mod mapgen;
 pub mod math_util;
+pub mod neighbors;
 pub mod network;
 pub mod region;
 pub mod scale;

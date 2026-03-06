@@ -16,8 +16,10 @@ pub struct EntityStore {
     // ─── Per-slot metadata ────────
     /// Generation counter per slot. Incremented on free.
     generation: Vec<u32>,
-    /// Whether each slot is currently occupied.
-    alive: Vec<bool>,
+    /// Bitset tracking which slots are occupied. Each u64 word covers 64 slots.
+    alive: Vec<u64>,
+    /// Actual requested capacity (capped at MAX_ENTITIES).
+    capacity: usize,
 
     // ─── Entity fields (SoA) ─────
     /// Archetype identifier.
@@ -48,11 +50,13 @@ impl EntityStore {
     /// Create a new empty entity store with pre-allocated capacity.
     pub fn new(capacity: usize) -> Self {
         let cap = capacity.min(MAX_ENTITIES);
+        let words = (cap + 63) / 64;
         let free_list: Vec<u32> = (0..cap as u32).rev().collect();
 
         EntityStore {
             generation: vec![0; cap],
-            alive: vec![false; cap],
+            alive: vec![0u64; words],
+            capacity: cap,
             archetype_id: vec![0; cap],
             pos_x: vec![0; cap],
             pos_y: vec![0; cap],
@@ -79,7 +83,7 @@ impl EntityStore {
         let idx = index as usize;
 
         let gen = self.generation[idx];
-        self.alive[idx] = true;
+        self.alive[idx / 64] |= 1u64 << (idx % 64);
         self.archetype_id[idx] = archetype;
         self.pos_x[idx] = x;
         self.pos_y[idx] = y;
@@ -100,7 +104,7 @@ impl EntityStore {
             return false;
         }
         let idx = handle.index as usize;
-        self.alive[idx] = false;
+        self.alive[idx / 64] &= !(1u64 << (idx % 64));
         self.generation[idx] = self.generation[idx].wrapping_add(1);
         self.free_list.push(handle.index);
         self.count -= 1;
@@ -111,8 +115,8 @@ impl EntityStore {
     #[inline]
     pub fn is_valid(&self, handle: EntityHandle) -> bool {
         let idx = handle.index as usize;
-        idx < self.alive.len()
-            && self.alive[idx]
+        idx < self.capacity
+            && (self.alive[idx / 64] >> (idx % 64)) & 1 != 0
             && self.generation[idx] == handle.generation
     }
 
@@ -125,7 +129,7 @@ impl EntityStore {
     /// Get the storage capacity.
     #[inline]
     pub fn capacity(&self) -> usize {
-        self.alive.len()
+        self.capacity
     }
 
     /// Get position of an entity. Returns None for invalid handles.
@@ -225,8 +229,9 @@ impl EntityStore {
 
     /// Iterate over all alive entity handles.
     pub fn iter_alive(&self) -> impl Iterator<Item = EntityHandle> + '_ {
-        self.alive.iter().enumerate().filter_map(|(i, &alive)| {
-            if alive {
+        let cap = self.capacity;
+        (0..cap).filter_map(move |i| {
+            if (self.alive[i / 64] >> (i % 64)) & 1 != 0 {
                 Some(EntityHandle::new(i as u32, self.generation[i]))
             } else {
                 None
@@ -236,8 +241,9 @@ impl EntityStore {
 
     /// Iterate alive entities that have specific flags set.
     pub fn iter_with_flags(&self, required: StatusFlags) -> impl Iterator<Item = EntityHandle> + '_ {
-        self.alive.iter().enumerate().filter_map(move |(i, &alive)| {
-            if alive && self.flags[i].contains(required) {
+        let cap = self.capacity;
+        (0..cap).filter_map(move |i| {
+            if (self.alive[i / 64] >> (i % 64)) & 1 != 0 && self.flags[i].contains(required) {
                 Some(EntityHandle::new(i as u32, self.generation[i]))
             } else {
                 None

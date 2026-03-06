@@ -101,6 +101,9 @@ pub struct TileValue {
     pub flags:   TileFlags,
 }
 
+// Compile-time layout guard: TileValue must fit in 8 bytes.
+const _: () = assert!(std::mem::size_of::<TileValue>() <= 8);
+
 impl TileValue {
     /// Default tile: grass terrain, no overlay, no zone, no flags.
     pub const DEFAULT: TileValue = TileValue {

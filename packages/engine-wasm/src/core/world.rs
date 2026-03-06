@@ -8,6 +8,9 @@ use crate::core::tilemap::TileMap;
 use crate::core_types::*;
 use serde::{Deserialize, Serialize};
 
+// Compile-time layout guard: Tile must be Copy and fit in 8 bytes.
+const _: () = assert!(std::mem::size_of::<crate::core::tilemap::TileValue>() <= 8);
+
 // ─── CityPolicies ────────────────────────────────────────────────────────────
 
 /// City-wide policy settings. All stored, all canonical.
