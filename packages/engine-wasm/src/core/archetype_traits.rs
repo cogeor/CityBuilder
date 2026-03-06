@@ -158,11 +158,12 @@ fn tags_to_category(tags: &[ArchetypeTag]) -> CategoryFlags {
             ArchetypeTag::Civic => CategoryFlags::CIVIC,
             ArchetypeTag::Utility => CategoryFlags::UTILITY,
             ArchetypeTag::Transport => CategoryFlags::TRANSPORT,
-            // Service and density tags are not category flags
+            // Service, density, and infrastructure tags are not category flags
             ArchetypeTag::Service
             | ArchetypeTag::LowDensity
             | ArchetypeTag::MediumDensity
-            | ArchetypeTag::HighDensity => CategoryFlags::NONE,
+            | ArchetypeTag::HighDensity
+            | ArchetypeTag::PowerLine => CategoryFlags::NONE,
         };
         flags = flags.union(bit);
     }

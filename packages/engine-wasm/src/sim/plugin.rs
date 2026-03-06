@@ -6,6 +6,7 @@ use crate::core::events::EventBus;
 use crate::core::network::RoadGraph;
 use crate::core::world::WorldState;
 use crate::math::rng::Rng;
+use crate::sim::phase_wheel::PhaseWheel;
 use crate::sim::systems::city_events::CityEventState;
 use crate::sim::systems::transport::TrafficGrid;
 
@@ -23,7 +24,11 @@ pub struct SimWorld<'a> {
     pub population: &'a mut u32,
     /// Shortage flags from the previous tick.
     pub power_shortage: &'a mut bool,
+    /// Unmet power demand in kW from the previous tick.
+    pub power_shortage_kw: &'a mut u32,
     pub water_shortage: &'a mut bool,
+    /// Phase wheel for gating expensive computation.
+    pub phase_wheel: &'a PhaseWheel,
 }
 
 /// One pluggable simulation system.

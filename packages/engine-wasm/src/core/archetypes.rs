@@ -21,6 +21,9 @@ pub enum ArchetypeTag {
     LowDensity,
     MediumDensity,
     HighDensity,
+    /// Power-line infrastructure: tiles occupied by this archetype act as
+    /// electrical conductors (BFS propagation).
+    PowerLine,
 }
 
 /// Prerequisite for placement.

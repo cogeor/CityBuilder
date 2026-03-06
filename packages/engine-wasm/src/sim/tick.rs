@@ -36,6 +36,8 @@ pub struct TickOutput {
     pub population: u32,
     /// Current treasury balance after this tick.
     pub treasury: MoneyCents,
+    /// Unmet power demand in kW after this tick (0 = no shortage).
+    pub power_shortage_kw: u32,
     /// Structured state/metric changes emitted this tick.
     pub world_diff: WorldDiff,
 }
@@ -64,6 +66,8 @@ pub struct SimulationEngine {
     pub population: u32,
     /// Whether the previous tick had a power shortage.
     pub power_shortage: bool,
+    /// Unmet power demand in kW from the previous tick (0 = no shortage).
+    pub power_shortage_kw: u32,
     /// Whether the previous tick had a water shortage.
     pub water_shortage: bool,
     /// Queue of commands applied during phase 1 of the next tick.
@@ -96,6 +100,7 @@ impl SimulationEngine {
             city_event_state: CityEventState::new(),
             population: 0,
             power_shortage: false,
+            power_shortage_kw: 0,
             water_shortage: false,
             pending_commands: Vec::new(),
             cache_manager: CacheManager::new(),
@@ -161,7 +166,9 @@ impl SimulationEngine {
             city_event_state: &mut self.city_event_state,
             population: &mut self.population,
             power_shortage: &mut self.power_shortage,
+            power_shortage_kw: &mut self.power_shortage_kw,
             water_shortage: &mut self.water_shortage,
+            phase_wheel: &self.phase_wheel,
         };
         // plugins is temporarily taken out so we can call &mut self.plugins
         // while also holding &mut self.world etc.
@@ -191,6 +198,11 @@ impl SimulationEngine {
             scope: MetricScope::Global,
             value: self.world.treasury,
         });
+        diffs.push_metric(MetricUpdate {
+            metric_id: 3, // power shortage kW
+            scope: MetricScope::Global,
+            value: self.power_shortage_kw as i64,
+        });
         let world_diff = WorldDiff::from_collector(tick, &mut diffs);
 
         // 12. Drain all events produced this tick.
@@ -201,6 +213,7 @@ impl SimulationEngine {
             events,
             population: self.population,
             treasury: self.world.treasury,
+            power_shortage_kw: self.power_shortage_kw,
             world_diff,
         }
     }
@@ -734,5 +747,91 @@ mod tests {
         let result = engine.apply_command(&place);
         assert!(result.is_ok());
         assert_eq!(engine.world.entities.count(), 1);
+    }
+
+    // ── Test: power_shortage_kw reflects deficit ─────────────────────────
+
+    #[test]
+    fn power_shortage_kw_reflects_deficit() {
+        // Scenario A: residential consumer with no power plant → shortage expected.
+        {
+            let mut engine = make_engine_with_base_archetypes(42);
+
+            // Place a residential building (has power_demand_kw > 0).
+            // SetZoning first so placement is allowed.
+            assert!(engine
+                .apply_command(&Command::SetZoning {
+                    x: 5,
+                    y: 5,
+                    w: 1,
+                    h: 1,
+                    zone: ZoneType::Residential,
+                })
+                .is_ok());
+            assert!(engine
+                .apply_command(&Command::PlaceEntity {
+                    archetype_id: ARCH_RES_SMALL_HOUSE,
+                    x: 5,
+                    y: 5,
+                    rotation: 0,
+                })
+                .is_ok());
+
+            // Force construction to complete by fast-forwarding build_time ticks.
+            // base.buildings ARCH_RES_SMALL_HOUSE has build_time_ticks = 500.
+            // Run enough ticks to complete construction + one full phase wheel cycle
+            // (tick 1 = Utilities phase runs propagate_power).
+            let mut output = engine.tick(); // tick 1 — Utilities phase
+            // Ensure we actually ran on the Utilities phase (tick 1 % 4 == 1 == Utilities).
+            // The building is still under construction on tick 1 so demand = 0,
+            // but after build_time ticks the building completes and demand is non-zero.
+            // Run 500 more ticks to complete construction, then land on Utilities phase.
+            for _ in 0..500 {
+                output = engine.tick();
+            }
+            // Advance to the next Utilities phase tick (tick % 4 == 1).
+            // Current tick is 501. Next Utilities tick is at 505 (505 % 4 == 1).
+            while engine.world.tick % 4 != 1 {
+                output = engine.tick();
+            }
+            // Now at a Utilities tick with a completed residential consumer and no plant.
+            assert!(
+                output.power_shortage_kw > 0,
+                "Expected power shortage with consumer but no plant, got power_shortage_kw={}",
+                output.power_shortage_kw
+            );
+        }
+
+        // Scenario B: power plant adjacent to residential connected via road → no shortage.
+        {
+            let mut engine = make_engine_with_base_archetypes(42);
+
+            // Place a power plant at (5,5) — no zone required for utility.
+            assert!(engine
+                .apply_command(&Command::PlaceEntity {
+                    archetype_id: ARCH_UTIL_POWER_PLANT,
+                    x: 5,
+                    y: 5,
+                    rotation: 0,
+                })
+                .is_ok());
+
+            // The ARCH_UTIL_POWER_PLANT has supply >> small house demand,
+            // and the BFS will propagate power globally. No shortage expected.
+            // Run 4 ticks (one full phase cycle) so Utilities phase fires.
+            let mut output = engine.tick();
+            for _ in 0..3 {
+                output = engine.tick();
+            }
+            // Advance to the next Utilities tick.
+            while engine.world.tick % 4 != 1 {
+                output = engine.tick();
+            }
+            assert_eq!(
+                output.power_shortage_kw, 0,
+                "Expected no power shortage with plant in place, got power_shortage_kw={}",
+                output.power_shortage_kw
+            );
+        }
     }
 }

@@ -137,16 +137,34 @@ pub fn apply_command_with_registry(
             y,
             rotation,
         } => {
+            use crate::core::archetypes::ArchetypeTag;
+            use crate::core::tilemap::TileFlags;
+
             if let Some(registry) = registry {
                 if let Some(def) = registry.get(*archetype_id) {
                     world.treasury -= def.cost_at_level(1);
                 }
             }
             // Place entity
-            match world.place_entity(*archetype_id, *x, *y, *rotation) {
-                Some(handle) => Ok(CommandEffect::EntityPlaced { handle }),
-                None => Err(CommandError::TileOccupied),
+            let handle = match world.place_entity(*archetype_id, *x, *y, *rotation) {
+                Some(h) => h,
+                None => return Err(CommandError::TileOccupied),
+            };
+            // Stamp CONDUCTOR on all tiles of the footprint when archetype is a power line.
+            if let Some(registry) = registry {
+                if let Some(def) = registry.get(*archetype_id) {
+                    if def.has_tag(ArchetypeTag::PowerLine) {
+                        for dy in 0..def.footprint_h as i16 {
+                            for dx in 0..def.footprint_w as i16 {
+                                let tx = (*x + dx) as u32;
+                                let ty = (*y + dy) as u32;
+                                world.tiles.set_flags(tx, ty, TileFlags::CONDUCTOR);
+                            }
+                        }
+                    }
+                }
             }
+            Ok(CommandEffect::EntityPlaced { handle })
         }
 
         Command::RemoveEntity { handle } => {
@@ -351,6 +369,8 @@ fn try_add_road_segment(
     by: i16,
     road_type: RoadType,
 ) -> bool {
+    use crate::core::tilemap::TileFlags;
+
     if ax < 0 || ay < 0 || !world.tiles.in_bounds(ax as u32, ay as u32)
         || bx < 0 || by < 0 || !world.tiles.in_bounds(bx as u32, by as u32)
     {
@@ -359,7 +379,13 @@ fn try_add_road_segment(
     if !world.is_buildable(ax, ay) || !world.is_buildable(bx, by) {
         return false;
     }
-    road_graph.add_segment(TileCoord::new(ax, ay), TileCoord::new(bx, by), road_type)
+    if road_graph.add_segment(TileCoord::new(ax, ay), TileCoord::new(bx, by), road_type) {
+        world.tiles.set_flags(ax as u32, ay as u32, TileFlags::CONDUCTOR);
+        world.tiles.set_flags(bx as u32, by as u32, TileFlags::CONDUCTOR);
+        true
+    } else {
+        false
+    }
 }
 
 /// Get the current value of a policy.
