@@ -152,6 +152,19 @@ export class CommandHistory {
     this._commandsSinceSnapshot = 0;
   }
 
+  /**
+   * Remove a specific command from the undo stack by ID.
+   * Used to roll back a pushed record when worker delivery fails.
+   * Only searches the undo stack (delivery failure implies the command was never applied).
+   */
+  removeById(id: number): boolean {
+    const idx = this._undoStack.findIndex((r) => r.id === id);
+    if (idx === -1) return false;
+    this._undoStack.splice(idx, 1);
+    this._commandsSinceSnapshot = Math.max(0, this._commandsSinceSnapshot - 1);
+    return true;
+  }
+
   /** Number of commands in the undo stack. */
   getUndoCount(): number {
     return this._undoStack.length;

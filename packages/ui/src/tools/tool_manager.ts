@@ -6,7 +6,6 @@ export enum ToolState {
   Idle = 'idle',           // No action in progress
   Previewing = 'previewing', // Mouse hovering, showing ghost
   Dragging = 'dragging',   // Mouse down, dragging
-  Confirming = 'confirming', // About to confirm action
 }
 
 /** Tile coordinate */
@@ -26,7 +25,7 @@ export enum PlacementValidity {
 
 /** A command to be sent to the simulation */
 export interface ToolCommand {
-  type: 'place' | 'zone' | 'bulldoze' | 'road';
+  type: 'place' | 'zone' | 'bulldoze' | 'road' | 'terrain';
   /** Tile coordinates affected */
   tiles: TileCoord[];
   /** Archetype ID for placement */
@@ -35,6 +34,8 @@ export interface ToolCommand {
   zoneType?: number;
   /** Road type for road tool */
   roadType?: number;
+  /** Terrain type for terrain tool */
+  terrainType?: number;
   /** Estimated cost in cents */
   estimatedCost: number;
 }
@@ -77,6 +78,7 @@ export class ToolManager {
   private selectedArchetype: number;
   private selectedZoneType: number;
   private selectedRoadType: number;
+  private selectedTerrainType: number;
   private hoverTile: TileCoord | null;
   private dragRect: DragRect | null;
   private previewTiles: TileCoord[];
@@ -91,6 +93,7 @@ export class ToolManager {
     this.selectedArchetype = 0;
     this.selectedZoneType = 0;
     this.selectedRoadType = 1;
+    this.selectedTerrainType = 0;
     this.hoverTile = null;
     this.dragRect = null;
     this.previewTiles = [];
@@ -110,6 +113,7 @@ export class ToolManager {
   getSelectedArchetype(): number { return this.selectedArchetype; }
   getSelectedZoneType(): number { return this.selectedZoneType; }
   getSelectedRoadType(): number { return this.selectedRoadType; }
+  getSelectedTerrainType(): number { return this.selectedTerrainType; }
 
   // --- Configuration ---
   setValidateCallback(fn: ValidateCallback): void { this.validateFn = fn; }
@@ -118,11 +122,12 @@ export class ToolManager {
   removeEventListener(handler: ToolEventHandler): void { this.events.off(handler); }
 
   // --- Tool Selection ---
-  setTool(tool: ToolType, archetypeId?: number, zoneType?: number, roadType?: number): void {
+  setTool(tool: ToolType, archetypeId?: number, zoneType?: number, roadType?: number, terrainType?: number): void {
     this.activeTool = tool;
     if (archetypeId !== undefined) this.selectedArchetype = archetypeId;
     if (zoneType !== undefined) this.selectedZoneType = zoneType;
     if (roadType !== undefined) this.selectedRoadType = roadType;
+    if (terrainType !== undefined) this.selectedTerrainType = terrainType;
     this.cancelAction();
   }
 
@@ -151,16 +156,30 @@ export class ToolManager {
     });
   }
 
-  onMouseDown(tileX: number, tileY: number): void {
-    if (this.activeTool === ToolType.Select) return;
+  onMouseDown(tileX: number, tileY: number): ToolCommand | null {
+    if (this.activeTool === ToolType.Select) return null;
 
     if (this.activeTool === ToolType.Place) {
       // Place tool: immediate command on click
-      this.generatePlaceCommand(tileX, tileY);
+      return this.generatePlaceCommand(tileX, tileY);
     } else {
-      // Zone, bulldoze, road: start drag
+      // Zone, bulldoze, road, terrain: start drag
       this.state = ToolState.Dragging;
       this.dragRect = { startX: tileX, startY: tileY, endX: tileX, endY: tileY };
+      this.emit('stateChanged', { state: this.state });
+      return null;
+    }
+  }
+
+  /**
+   * Handle canvas mouse leave — resets hoverTile and transitions Previewing → Idle.
+   * Prevents a stale ghost tile being shown after the cursor leaves the viewport.
+   */
+  onMouseLeave(): void {
+    this.hoverTile = null;
+    if (this.state === ToolState.Previewing) {
+      this.state = ToolState.Idle;
+      this.previewTiles = [];
       this.emit('stateChanged', { state: this.state });
     }
   }
@@ -209,6 +228,7 @@ export class ToolManager {
       case ToolType.Zone: type = 'zone'; break;
       case ToolType.Bulldoze: type = 'bulldoze'; break;
       case ToolType.Road: type = 'road'; break;
+      case ToolType.Terrain: type = 'terrain'; break;
       default: return null;
     }
 
@@ -220,6 +240,7 @@ export class ToolManager {
 
     if (type === 'zone') command.zoneType = this.selectedZoneType;
     if (type === 'road') command.roadType = this.selectedRoadType;
+    if (type === 'terrain') command.terrainType = this.selectedTerrainType;
     if (this.costFn) command.estimatedCost = this.costFn(command);
 
     this.emit('commandGenerated', { command });
@@ -272,15 +293,12 @@ export class ToolManager {
   private updatePreview(): void {
     if (!this.hoverTile) return;
 
-    if (this.activeTool === ToolType.Place) {
-      this.previewTiles = [{ ...this.hoverTile }];
-      if (this.validateFn) {
-        this.previewValidity = this.validateFn(this.hoverTile.x, this.hoverTile.y, this.selectedArchetype);
-      } else {
-        this.previewValidity = PlacementValidity.Valid;
-      }
+    this.previewTiles = [{ ...this.hoverTile }];
+
+    if (this.validateFn) {
+      const archetypeId = this.activeTool === ToolType.Place ? this.selectedArchetype : undefined;
+      this.previewValidity = this.validateFn(this.hoverTile.x, this.hoverTile.y, archetypeId);
     } else {
-      this.previewTiles = [{ ...this.hoverTile }];
       this.previewValidity = PlacementValidity.Valid;
     }
   }

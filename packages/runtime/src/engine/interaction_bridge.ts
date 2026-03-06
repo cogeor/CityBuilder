@@ -39,12 +39,25 @@ function boundsFromTiles(tiles: ToolTile[]): { x: number; y: number; w: number; 
   };
 }
 
+/**
+ * Canonical zone type ID → serde name map.
+ * These values correspond to Rust `ZoneType` repr(u8) discriminants.
+ * Use this constant instead of magic numbers at call sites.
+ */
+export const ZONE_TYPE_IDS = {
+  None: 0,
+  Residential: 1,
+  Commercial: 2,
+  Industrial: 3,
+  Civic: 4,
+} as const;
+
 /** Explicit mapping of Rust ZoneType repr(u8) codes to serde string names. */
 const ZONE_CODE_MAP: Record<number, ZoneTypeName> = {
-  1: "Residential",
-  2: "Commercial",
-  3: "Industrial",
-  4: "Civic",
+  [ZONE_TYPE_IDS.Residential]: "Residential",
+  [ZONE_TYPE_IDS.Commercial]: "Commercial",
+  [ZONE_TYPE_IDS.Industrial]: "Industrial",
+  [ZONE_TYPE_IDS.Civic]: "Civic",
 };
 
 /**
@@ -189,5 +202,8 @@ export function translateToolInteraction(
   ];
 }
 
-// Backward-compatible export name.
+/**
+ * @deprecated Use `translateToolInteraction` instead.
+ * This alias will be removed in a future release (target: v0.2).
+ */
 export const mapToolInteractionToEngineCommands = translateToolInteraction;

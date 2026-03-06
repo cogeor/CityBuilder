@@ -37,11 +37,26 @@ function deriveUndoPayload(
     // Undo: restore the speed that was active before this command.
     return { SetSimSpeed: { speed: lastSimSpeed } };
   }
-  // SetRoadLine: no structural undo — the road graph state before painting is
-  // not captured, so we cannot reverse it without a full snapshot.
-  // PlaceEntity: undo requires the EntityHandle returned by the engine effect,
-  // which is only known after the command is applied (not at dispatch time).
-  // Bulldoze: tiles and entities are gone; no undo without snapshot.
+  if ("PlaceEntity" in command) {
+    // Undo via RemoveEntity — requires the EntityHandle returned by the engine.
+    // At dispatch time we do not have the handle, so undo is not available here.
+    // A post-effect hook would be needed to populate this; documented for future work.
+    return null;
+  }
+  if ("SetRoadLine" in command) {
+    // Undo by removing the road segment. RemoveRoad takes a single tile, so for
+    // multi-tile lines (x0,y0)→(x1,y1) we remove the start tile as a best-effort.
+    // Full line removal would require a multi-tile variant not yet available.
+    const c = command.SetRoadLine;
+    return {
+      RemoveRoad: {
+        x: c.x0,
+        y: c.y0,
+      },
+    };
+  }
+  // Bulldoze: tiles and entities are permanently removed. No undo without a full snapshot.
+  // WARNING: bulldoze operations are intentionally non-undoable. Do not silently no-op.
   return null;
 }
 
@@ -243,7 +258,9 @@ export class RuntimeFacade {
     // Forward to sim worker if available
     if (this._workerManager) {
       this._workerManager.sendCommand(JSON.stringify(command)).catch(() => {
-        // Command delivery failures are logged but do not throw synchronously
+        // Remove the command from history when worker delivery fails so the
+        // history stays consistent with actual engine state.
+        this._commandHistory.removeById(record.id);
       });
     }
   }
