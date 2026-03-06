@@ -124,7 +124,7 @@ const hospital: ArchetypeDefinition = {
   id: 300,
   name: "Hospital",
   tags: ["civic", "health"],
-  footprint: { w: 5, h: 5 },
+  footprint: { w: 3, h: 3 },
   coverageRatio: 0.6,
   floors: 4,
   usableRatio: 0.75,
@@ -240,62 +240,10 @@ export function getArchetypesByTag(
   return BASE_BUILDINGS.filter((a) => a.tags.includes(tag));
 }
 
-// ---- Computation Functions ----
-
-/** Compute capacity at a given level */
-export function computeCapacity(
-  archetype: ArchetypeDefinition,
-  level: number,
-): number {
-  const grossArea =
-    archetype.footprint.w *
-    archetype.footprint.h *
-    256 *
-    archetype.coverageRatio *
-    archetype.floors;
-  const netArea = grossArea * archetype.usableRatio;
-  const baseCapacity =
-    archetype.livingSpacePerPerson > 0
-      ? Math.floor(netArea / archetype.livingSpacePerPerson)
-      : archetype.workspacePerJob > 0
-        ? Math.floor(netArea / archetype.workspacePerJob)
-        : 0;
-  const multiplier =
-    archetype.levelScaling.capacityMultiplier[
-      Math.min(
-        level - 1,
-        archetype.levelScaling.capacityMultiplier.length - 1,
-      )
-    ] ?? 1;
-  return Math.floor(baseCapacity * multiplier);
-}
-
-/** Compute cost at a given level */
-export function computeCost(
-  archetype: ArchetypeDefinition,
-  level: number,
-): number {
-  const multiplier =
-    archetype.levelScaling.costMultiplier[
-      Math.min(level - 1, archetype.levelScaling.costMultiplier.length - 1)
-    ] ?? 1;
-  return Math.floor(archetype.baseCost * multiplier);
-}
-
-/** Compute upkeep at a given level */
-export function computeUpkeep(
-  archetype: ArchetypeDefinition,
-  level: number,
-): number {
-  const multiplier =
-    archetype.levelScaling.upkeepMultiplier[
-      Math.min(
-        level - 1,
-        archetype.levelScaling.upkeepMultiplier.length - 1,
-      )
-    ] ?? 1;
-  return Math.floor(archetype.baseUpkeepPerTick * multiplier);
-}
+// ---- Engine Ownership ----
+// All simulation formulas (capacity/cost/upkeep/power/tax effects) are
+// authoritative in Rust/WASM. This module intentionally exposes content data
+// and schema validation only.
 
 // ---- Validation ----
 

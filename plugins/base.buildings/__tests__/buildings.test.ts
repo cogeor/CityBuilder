@@ -1,16 +1,11 @@
-import { describe, it, expect } from "vitest";
+﻿import { describe, it, expect } from "vitest";
 import {
   BASE_BUILDINGS,
   getArchetypeById,
   getArchetypesByTag,
-  computeCapacity,
-  computeCost,
-  computeUpkeep,
   validateArchetype,
   type ArchetypeDefinition,
 } from "../index.js";
-
-// ---- BASE_BUILDINGS collection ----
 
 describe("BASE_BUILDINGS", () => {
   it("has 5 entries", () => {
@@ -23,8 +18,6 @@ describe("BASE_BUILDINGS", () => {
     expect(uniqueIds.size).toBe(ids.length);
   });
 });
-
-// ---- Individual archetype properties ----
 
 describe("archetype properties", () => {
   it("small house has correct properties", () => {
@@ -60,6 +53,14 @@ describe("archetype properties", () => {
     expect(hosp!.serviceRadius).toBe(30);
   });
 
+  it("hospital footprint is 3x3 — regression guard against 5x5 divergence", () => {
+    // Canonical footprint from SimCity tiles 409-417 is 3x3.
+    // This test prevents Rust (3x3) vs TypeScript (5x5) drift from reappearing.
+    const hosp = getArchetypeById(300);
+    expect(hosp).toBeDefined();
+    expect(hosp!.footprint).toEqual({ w: 3, h: 3 });
+  });
+
   it("shop has commercial tag", () => {
     const s = getArchetypeById(400);
     expect(s).toBeDefined();
@@ -78,8 +79,6 @@ describe("archetype properties", () => {
   });
 });
 
-// ---- getArchetypeById ----
-
 describe("getArchetypeById", () => {
   it("finds archetype by id", () => {
     const result = getArchetypeById(100);
@@ -93,8 +92,6 @@ describe("getArchetypeById", () => {
     expect(result).toBeUndefined();
   });
 });
-
-// ---- getArchetypesByTag ----
 
 describe("getArchetypesByTag", () => {
   it("returns residential buildings", () => {
@@ -121,90 +118,6 @@ describe("getArchetypesByTag", () => {
     expect(industrial).toHaveLength(0);
   });
 });
-
-// ---- computeCapacity ----
-
-describe("computeCapacity", () => {
-  it("computes capacity for small house level 1", () => {
-    const house = getArchetypeById(100)!;
-    // grossArea = 1 * 1 * 256 * 0.5 * 2 = 256
-    // netArea = 256 * 0.8 = 204.8
-    // baseCapacity = floor(204.8 / 40) = 5
-    // multiplier at level 1 = 1.0
-    // result = floor(5 * 1.0) = 5
-    const cap = computeCapacity(house, 1);
-    expect(cap).toBe(5);
-  });
-
-  it("scales capacity with level", () => {
-    const house = getArchetypeById(100)!;
-    const capL1 = computeCapacity(house, 1);
-    const capL2 = computeCapacity(house, 2);
-    const capL3 = computeCapacity(house, 3);
-    expect(capL2).toBeGreaterThan(capL1);
-    expect(capL3).toBeGreaterThan(capL2);
-    // level 2: floor(5 * 1.5) = 7
-    expect(capL2).toBe(7);
-    // level 3: floor(5 * 2.5) = 12
-    expect(capL3).toBe(12);
-  });
-
-  it("computes workspace capacity for power plant", () => {
-    const plant = getArchetypeById(200)!;
-    // grossArea = 3 * 3 * 256 * 0.7 * 2 = 3225.6
-    // netArea = 3225.6 * 0.9 = 2903.04
-    // baseCapacity = floor(2903.04 / 25) = 116
-    // multiplier at level 1 = 1.0
-    // result = floor(116 * 1.0) = 116
-    const cap = computeCapacity(plant, 1);
-    expect(cap).toBe(116);
-  });
-});
-
-// ---- computeCost ----
-
-describe("computeCost", () => {
-  it("returns base cost at level 1", () => {
-    const house = getArchetypeById(100)!;
-    expect(computeCost(house, 1)).toBe(15000);
-  });
-
-  it("scales cost with level", () => {
-    const house = getArchetypeById(100)!;
-    // level 2: floor(15000 * 1.5) = 22500
-    expect(computeCost(house, 2)).toBe(22500);
-    // level 3: floor(15000 * 2.0) = 30000
-    expect(computeCost(house, 3)).toBe(30000);
-  });
-});
-
-// ---- computeUpkeep ----
-
-describe("computeUpkeep", () => {
-  it("returns base upkeep at level 1", () => {
-    const house = getArchetypeById(100)!;
-    expect(computeUpkeep(house, 1)).toBe(1);
-  });
-
-  it("scales upkeep with level", () => {
-    const house = getArchetypeById(100)!;
-    // level 2: floor(1 * 1.3) = 1
-    expect(computeUpkeep(house, 2)).toBe(1);
-    // level 3: floor(1 * 1.8) = 1
-    expect(computeUpkeep(house, 3)).toBe(1);
-
-    // Use power plant for clearer scaling
-    const plant = getArchetypeById(200)!;
-    // level 1: floor(15 * 1.0) = 15
-    expect(computeUpkeep(plant, 1)).toBe(15);
-    // level 2: floor(15 * 1.5) = 22
-    expect(computeUpkeep(plant, 2)).toBe(22);
-    // level 3: floor(15 * 2.5) = 37
-    expect(computeUpkeep(plant, 3)).toBe(37);
-  });
-});
-
-// ---- validateArchetype ----
 
 describe("validateArchetype", () => {
   it("returns no errors for valid archetype", () => {

@@ -2,7 +2,7 @@
   "id": 300,
   "name": "Hospital",
   "tags": ["civic", "health"],
-  "footprint": { "w": 5, "h": 5 },
+  "footprint": { "w": 3, "h": 3 },
   "coverageRatio": 0.6,
   "floors": 4,
   "usableRatio": 0.75,
