@@ -36,6 +36,10 @@ mod determinism_guards {
                 "sim/systems/city_events.rs",
                 include_str!("systems/city_events.rs"),
             ),
+            (
+                "sim/systems/diurnal.rs",
+                include_str!("systems/diurnal.rs"),
+            ),
             ("sim/tick.rs", include_str!("tick.rs")),
         ];
         for (path, src) in files {
