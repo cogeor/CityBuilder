@@ -20,8 +20,10 @@ use crate::sim::plugin::{SimulationPlugin, SimWorld};
 use crate::sim::plugins::{
     BuildingsPlugin, CityEventsPlugin, ConstructionPlugin,
     FinancePlugin, JobsPlugin, PopulationPlugin,
-    PowerPlugin, TransportPlugin, WaterPlugin,
+    TransportPlugin,
 };
+use crate::sim::systems::utility_registry::UtilityRegistry;
+use crate::sim::systems::utility_system::{ElectricitySystem, HealthCareSystem, WaterSystem};
 use crate::sim::systems::city_events::CityEventState;
 use crate::sim::systems::transport::TrafficGrid;
 
@@ -66,14 +68,8 @@ pub struct SimulationEngine {
     pub city_event_state: CityEventState,
     /// Current city population (carried across ticks).
     pub population: u32,
-    /// Whether the previous tick had a power shortage.
-    pub power_shortage: bool,
-    /// Unmet power demand in kW from the previous tick (0 = no shortage).
-    pub power_shortage_kw: u32,
-    /// Whether the previous tick had a water shortage.
-    pub water_shortage: bool,
-    /// Unmet water demand in kL from the previous tick (0 = no shortage).
-    pub water_shortage_kl: u32,
+    /// Registry of utility simulation systems (electricity, water, healthcare).
+    pub utilities: UtilityRegistry,
     /// Queue of commands applied during phase 1 of the next tick.
     pub pending_commands: Vec<Command>,
     /// Cache dirty tracking and invalidation map.
@@ -93,6 +89,11 @@ impl SimulationEngine {
         let map_size = world.map_size();
         let traffic_grid = TrafficGrid::new(map_size.width, map_size.height);
 
+        let mut utilities = UtilityRegistry::new();
+        utilities.register(ElectricitySystem::new());
+        utilities.register(WaterSystem::new());
+        utilities.register(HealthCareSystem::new());
+
         SimulationEngine {
             world,
             registry,
@@ -103,17 +104,12 @@ impl SimulationEngine {
             traffic_grid,
             city_event_state: CityEventState::new(),
             population: 0,
-            power_shortage: false,
-            power_shortage_kw: 0,
-            water_shortage: false,
-            water_shortage_kl: 0,
+            utilities,
             pending_commands: Vec::new(),
             cache_manager: CacheManager::new(),
             plugins: vec![
                 Box::new(BuildingsPlugin::new()),
                 Box::new(ConstructionPlugin),
-                Box::new(PowerPlugin),
-                Box::new(WaterPlugin),
                 Box::new(PopulationPlugin),
                 Box::new(JobsPlugin),
                 Box::new(TransportPlugin),
@@ -160,7 +156,7 @@ impl SimulationEngine {
             self.cache_manager.invalidate(reason);
         }
 
-        // Phase 3: run systems via plugin loop.
+        // Phase 3a: run plugin systems (construction, population, jobs, transport, …).
         let mut sim_world = SimWorld {
             world: &mut self.world,
             registry: &self.registry,
@@ -170,10 +166,6 @@ impl SimulationEngine {
             traffic_grid: &mut self.traffic_grid,
             city_event_state: &mut self.city_event_state,
             population: &mut self.population,
-            power_shortage: &mut self.power_shortage,
-            power_shortage_kw: &mut self.power_shortage_kw,
-            water_shortage: &mut self.water_shortage,
-            water_shortage_kl: &mut self.water_shortage_kl,
             phase_wheel: &self.phase_wheel,
         };
         // plugins is temporarily taken out so we can call &mut self.plugins
@@ -183,6 +175,15 @@ impl SimulationEngine {
             plugin.tick(&mut sim_world, tick);
         }
         self.plugins = plugins;
+
+        // Phase 3b: run utility systems AFTER construction so completed buildings
+        // are included in supply/demand accounting this same tick.
+        self.utilities.update_all(
+            &mut self.world,
+            &self.registry,
+            &mut self.events,
+            tick,
+        );
 
         // 11. Adapt phase wheel (placeholder: 0 microseconds measured).
         self.phase_wheel.adapt(0);
@@ -204,15 +205,17 @@ impl SimulationEngine {
             scope: MetricScope::Global,
             value: self.world.treasury,
         });
+        let power_shortage_kw = self.utilities.deficit("electricity");
+        let water_shortage_kl = self.utilities.deficit("water");
         diffs.push_metric(MetricUpdate {
             metric_id: 3, // power shortage kW
             scope: MetricScope::Global,
-            value: self.power_shortage_kw as i64,
+            value: power_shortage_kw as i64,
         });
         diffs.push_metric(MetricUpdate {
             metric_id: 4, // water shortage kl
             scope: MetricScope::Global,
-            value: self.water_shortage_kl as i64,
+            value: water_shortage_kl as i64,
         });
         let world_diff = WorldDiff::from_collector(tick, &mut diffs);
 
@@ -224,8 +227,8 @@ impl SimulationEngine {
             events,
             population: self.population,
             treasury: self.world.treasury,
-            power_shortage_kw: self.power_shortage_kw,
-            water_shortage_kl: self.water_shortage_kl,
+            power_shortage_kw,
+            water_shortage_kl,
             world_diff,
         }
     }
@@ -393,8 +396,8 @@ mod tests {
         assert_eq!(engine.world.tick, 0);
         assert_eq!(engine.world.treasury, 500_000);
         assert_eq!(engine.population, 0);
-        assert!(!engine.power_shortage);
-        assert!(!engine.water_shortage);
+        assert!(!engine.utilities.has_shortage("electricity"));
+        assert!(!engine.utilities.has_shortage("water"));
         assert!(engine.events.is_empty());
         assert!(engine.city_event_state.fires.is_empty());
         assert_eq!(engine.world.map_size(), MapSize::new(32, 32));
