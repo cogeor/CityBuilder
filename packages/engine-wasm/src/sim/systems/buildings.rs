@@ -9,7 +9,7 @@
 
 use crate::core::archetypes::{ArchetypeDefinition, ArchetypeRegistry, ArchetypeTag};
 use crate::core::world::WorldState;
-use crate::core_types::{EntityHandle, Tick, ZoneDensity, ZoneType};
+use crate::core_types::{EntityHandle, StatusFlags, Tick, ZoneDensity, ZoneType};
 use crate::math::rng::Rng;
 use crate::sim::systems::stripe_walk::StripeWalkIter;
 
@@ -46,6 +46,89 @@ impl ZoneDemand {
             // Civic always develops regardless of demand
             ZoneType::Civic | ZoneType::Park | ZoneType::Transport | ZoneType::None => true,
         }
+    }
+}
+
+// ─── Demand computation ───────────────────────────────────────────────────────
+
+/// Compute `ZoneDemand` signals from the current city state.
+///
+/// Residential demand is driven by housing surplus/deficit. Commercial and
+/// industrial demand are approximated from the population/job ratio. Growth
+/// modifiers from `CityPolicies` tax rates map to the GROWTH_MODIFIERS table
+/// defined in `plugins/base.economy/economy.ts` (0-20% tax range → ±50 pts).
+///
+/// Returns demand in the range [-100..+100] per zone type.
+pub fn compute_zone_demand(world: &WorldState, registry: &ArchetypeRegistry, population: u32) -> ZoneDemand {
+    // ── Housing capacity ────────────────────────────────────────────────
+    let mut housing_cap: u32 = 0;
+    let mut job_cap: u32 = 0;
+
+    for handle in world.entities.iter_alive() {
+        let flags = match world.entities.get_flags(handle) {
+            Some(f) => f,
+            None => continue,
+        };
+        if flags.contains(StatusFlags::UNDER_CONSTRUCTION) {
+            continue;
+        }
+        let arch_id = match world.entities.get_archetype(handle) {
+            Some(id) => id,
+            None => continue,
+        };
+        let def = match registry.get(arch_id) {
+            Some(d) => d,
+            None => continue,
+        };
+        if def.has_tag(ArchetypeTag::Residential) {
+            housing_cap += def.resident_capacity();
+        } else if def.has_tag(ArchetypeTag::Commercial) || def.has_tag(ArchetypeTag::Industrial) {
+            if def.workspace_per_job_m2 > 0 {
+                job_cap += def.job_capacity();
+            }
+        }
+    }
+
+    // ── Residential demand ──────────────────────────────────────────────
+    // Positive demand when there is a housing deficit (population > capacity).
+    // Clamped to [-100..+100].
+    let res_demand: i16 = if housing_cap == 0 {
+        // No housing at all → maximum demand
+        100
+    } else if population > housing_cap {
+        // Deficit: more people than houses → build more
+        let deficit = (population - housing_cap).min(500) as i16;
+        (deficit / 5).min(100)
+    } else {
+        // Surplus: more houses than people → no demand (or slight negative)
+        let surplus = (housing_cap - population).min(500) as i16;
+        -(surplus / 5).min(100)
+    };
+
+    // ── Commercial / Industrial demand ──────────────────────────────────
+    // Proxy: ratio of population to job capacity drives commercial/industrial.
+    let pop = population.max(1) as i16;
+    let jobs = job_cap as i16;
+    let ci_demand: i16 = if jobs == 0 {
+        // No jobs yet → moderate demand when there's population
+        (pop / 10).min(50)
+    } else {
+        // Demand proportional to pop/job imbalance
+        let ratio_shortfall = pop.saturating_sub(jobs);
+        (ratio_shortfall / 10).min(100).max(-100)
+    };
+
+    // ── Tax modifier (GROWTH_MODIFIERS: tax_rate 0.5..1.5x) ────────────
+    // Residential tax 0% → +25 demand bonus; 20% → -25 demand penalty.
+    // Maps tax_pct to [-25..+25] offset: offset = 25 - (tax_pct * 25 / 10)
+    let res_tax_offset: i16 = 25 - (world.policies.residential_tax_pct as i16 * 25 / 10);
+    let com_tax_offset: i16 = 25 - (world.policies.commercial_tax_pct as i16 * 25 / 10);
+    let ind_tax_offset: i16 = 25 - (world.policies.industrial_tax_pct as i16 * 25 / 10);
+
+    ZoneDemand {
+        residential: (res_demand + res_tax_offset).clamp(-100, 100),
+        commercial:  (ci_demand + com_tax_offset).clamp(-100, 100),
+        industrial:  (ci_demand + ind_tax_offset).clamp(-100, 100),
     }
 }
 
