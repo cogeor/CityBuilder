@@ -8,6 +8,7 @@ import {
   type ValidationResult,
   type IPluginValidator,
 } from "./types.js";
+import { normalizeForValidation } from "./manifest_input.js";
 
 /**
  * Parse the major version number from a version string.
@@ -36,19 +37,14 @@ export class EngineVersionValidator implements IPluginValidator {
   }
 
   validate(manifest: unknown): ValidationResult {
-    if (manifest === null || manifest === undefined || typeof manifest !== "object") {
-      return {
-        stage: this.stage,
-        valid: false,
-        severity: ValidationSeverity.Error,
-        message: "Manifest must be a non-null object",
-      };
-    }
-
-    const m = manifest as Record<string, unknown>;
+    const input = normalizeForValidation(this.stage, manifest);
+    if ("error" in input) return input.error;
+    const normalized = input.normalized;
+    const raw = manifest as Record<string, unknown>;
+    const required = typeof raw.engine === "string" ? raw.engine : normalized.engine_compat;
 
     // If no engine field, treat as compatible (no constraint declared)
-    if (m.engine === undefined || m.engine === null) {
+    if (!required) {
       return {
         stage: this.stage,
         valid: true,
@@ -57,25 +53,25 @@ export class EngineVersionValidator implements IPluginValidator {
       };
     }
 
-    if (typeof m.engine !== "string" || m.engine.length === 0) {
+    if (typeof required !== "string" || required.length === 0) {
       return {
         stage: this.stage,
         valid: false,
         severity: ValidationSeverity.Error,
         message: "Manifest 'engine' must be a non-empty string if specified",
-        metadata: { field: "engine", value: m.engine },
+        metadata: { field: "engine", value: required },
       };
     }
 
-    const requiredMajor = parseMajor(m.engine);
+    const requiredMajor = parseMajor(required);
 
     if (isNaN(requiredMajor)) {
       return {
         stage: this.stage,
         valid: false,
         severity: ValidationSeverity.Error,
-        message: `Cannot parse engine version from "${m.engine}"`,
-        metadata: { engine: m.engine },
+        message: `Cannot parse engine version from "${required}"`,
+        metadata: { engine: required },
       };
     }
 
@@ -86,7 +82,7 @@ export class EngineVersionValidator implements IPluginValidator {
         severity: ValidationSeverity.Error,
         message: `Engine major version mismatch: plugin requires ${requiredMajor}.x, engine is ${this.engineVersion}`,
         metadata: {
-          required: m.engine,
+          required,
           actual: this.engineVersion,
           requiredMajor,
           actualMajor: this.engineMajor,

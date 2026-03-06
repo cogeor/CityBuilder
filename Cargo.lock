@@ -347,7 +347,6 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "city_core",
- "city_engine",
  "env_logger",
  "log",
  "pollster",

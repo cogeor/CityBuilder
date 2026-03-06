@@ -1,56 +1,78 @@
-// @townbuilder/runtime — Plugin registry and dependency resolver
-// Manages plugin lifecycle: registration, lookup, and load-order resolution.
+// @townbuilder/runtime -- Plugin registry and dependency resolver
+// Canonical registry for normalized manifests plus deterministic load ordering.
 
-import type { PluginManifest, PluginEntry } from "./manifest.js";
+import {
+  normalizeManifest,
+  validateManifest,
+  type PluginManifest,
+  type PluginEntry,
+} from "./manifest.js";
 
-// ---- Plugin Registry ----
+function manifestProvidesType(manifest: PluginManifest, type: string): boolean {
+  if (manifest.content_type === type) return true;
+  return type in manifest.contributes;
+}
 
-/** Central registry for all loaded plugins. */
+/** Central registry for all discovered plugins. */
 export class PluginRegistry {
   private readonly plugins: Map<string, PluginEntry> = new Map();
 
-  /**
-   * Register a plugin manifest. Creates an unloaded PluginEntry.
-   * Returns false if a plugin with the same ID is already registered.
-   */
+  /** Register a manifest. Returns false on duplicate or invalid manifest. */
   register(manifest: PluginManifest): boolean {
-    if (this.plugins.has(manifest.id)) {
+    const normalized = normalizeManifest(manifest);
+    if (!normalized || !validateManifest(normalized)) {
+      return false;
+    }
+    if (this.plugins.has(normalized.id)) {
       return false;
     }
 
-    const entry: PluginEntry = {
-      manifest,
+    this.plugins.set(normalized.id, {
+      manifest: normalized,
       loaded: false,
       data: null,
-    };
-
-    this.plugins.set(manifest.id, entry);
+    });
     return true;
   }
 
-  /** Retrieve a plugin entry by ID, or undefined if not found. */
+  /** Retrieve a plugin entry by ID. */
   get(id: string): PluginEntry | undefined {
     return this.plugins.get(id);
   }
 
-  /** Return an array of all registered plugin manifests. */
+  /** Return all normalized plugin manifests. */
   list(): PluginManifest[] {
     return Array.from(this.plugins.values()).map((entry) => entry.manifest);
   }
 
-  /** Return manifests filtered by content_type. */
+  /** Return manifests that contribute to a content type. */
   listByType(type: string): PluginManifest[] {
     return Array.from(this.plugins.values())
-      .filter((entry) => entry.manifest.content_type === type)
+      .filter((entry) => manifestProvidesType(entry.manifest, type))
       .map((entry) => entry.manifest);
   }
 
-  /**
-   * Remove a plugin from the registry.
-   * Returns false if the plugin was not registered.
-   */
+  /** Remove a plugin from the registry. */
   unregister(id: string): boolean {
     return this.plugins.delete(id);
+  }
+
+  /** Mark a plugin as loaded with arbitrary payload. */
+  setLoaded(id: string, data: unknown): boolean {
+    const entry = this.plugins.get(id);
+    if (!entry) return false;
+    entry.loaded = true;
+    entry.data = data;
+    return true;
+  }
+
+  /** Mark plugin as unloaded and clear runtime payload. */
+  setUnloaded(id: string): boolean {
+    const entry = this.plugins.get(id);
+    if (!entry) return false;
+    entry.loaded = false;
+    entry.data = null;
+    return true;
   }
 
   /** Check whether a plugin's data has been loaded. */
@@ -59,28 +81,26 @@ export class PluginRegistry {
     return entry !== undefined && entry.loaded;
   }
 
-  /** Return the number of registered plugins. */
+  /** Return number of registered plugins. */
   count(): number {
     return this.plugins.size;
   }
+
+  /** Clear all registry entries. */
+  clear(): void {
+    this.plugins.clear();
+  }
 }
 
-// ---- Dependency Resolution ----
-
-/**
- * Validate that all declared dependencies exist within the given manifest set.
- * Returns an array of missing dependency IDs (empty if all satisfied).
- */
+/** Validate that declared dependencies are present in the manifest set. */
 export function validateDependencies(manifests: PluginManifest[]): string[] {
   const knownIds = new Set(manifests.map((m) => m.id));
   const missing: string[] = [];
 
   for (const manifest of manifests) {
     for (const dep of manifest.dependencies) {
-      if (!knownIds.has(dep)) {
-        if (!missing.includes(dep)) {
-          missing.push(dep);
-        }
+      if (!knownIds.has(dep) && !missing.includes(dep)) {
+        missing.push(dep);
       }
     }
   }
@@ -88,21 +108,15 @@ export function validateDependencies(manifests: PluginManifest[]): string[] {
   return missing;
 }
 
-/**
- * Topological sort of plugin manifests by dependency order.
- * Returns manifests ordered so that dependencies come before dependents.
- * Throws an Error if a circular dependency is detected.
- */
+/** Topological sort of manifests by dependency order. */
 export function resolveDependencies(
   manifests: PluginManifest[],
 ): PluginManifest[] {
-  // Build lookup and adjacency
   const byId = new Map<string, PluginManifest>();
   for (const m of manifests) {
     byId.set(m.id, m);
   }
 
-  // Track visit state: 0 = unvisited, 1 = in-progress, 2 = done
   const state = new Map<string, number>();
   for (const m of manifests) {
     state.set(m.id, 0);
@@ -112,21 +126,19 @@ export function resolveDependencies(
 
   function visit(id: string): void {
     const s = state.get(id);
-    if (s === 2) return; // already processed
+    if (s === 2) return;
     if (s === 1) {
       throw new Error(`Circular dependency detected involving plugin "${id}"`);
     }
 
     const manifest = byId.get(id);
-    if (manifest === undefined) return; // external dep, skip
+    if (manifest === undefined) return;
 
-    state.set(id, 1); // mark in-progress
-
+    state.set(id, 1);
     for (const dep of manifest.dependencies) {
       visit(dep);
     }
-
-    state.set(id, 2); // mark done
+    state.set(id, 2);
     sorted.push(manifest);
   }
 

@@ -10,8 +10,6 @@ export {
   DEPARTMENTS,
   getTaxBracket,
   getWorkspaceDensity,
-  computeTaxRevenue,
-  computeTaxGrowthModifier,
   getDepartment,
   validateEconomyConfig,
 } from "./economy.js";

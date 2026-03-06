@@ -1,5 +1,7 @@
 // @townbuilder/core-types — numeric constants
-// All simulation-critical constants. No floating-point in sim logic.
+// Canonical simulation constants mirrored across TS/Rust boundaries.
+// Floating-point values are allowed in content/config layers; Rust/WASM remains
+// authoritative for world-state transitions.
 
 // ─── Time Constants ─────────────────────────────────────────────────────────
 

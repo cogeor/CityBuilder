@@ -8,6 +8,7 @@ import {
   type ValidationResult,
   type IPluginValidator,
 } from "./types.js";
+import { normalizeForValidation } from "./manifest_input.js";
 
 /** Content types where only one plugin should be active at a time. */
 const EXCLUSIVE_CONTENT_TYPES: ReadonlySet<string> = new Set([
@@ -40,47 +41,25 @@ export class CompatibilityValidator implements IPluginValidator {
   }
 
   validate(manifest: unknown): ValidationResult {
-    if (manifest === null || manifest === undefined || typeof manifest !== "object") {
-      return {
-        stage: this.stage,
-        valid: false,
-        severity: ValidationSeverity.Error,
-        message: "Manifest must be a non-null object",
-      };
-    }
-
-    const m = manifest as Record<string, unknown>;
+    const input = normalizeForValidation(this.stage, manifest);
+    if ("error" in input) return input.error;
+    const m = input.normalized;
     const conflicts: string[] = [];
 
     // Check for duplicate plugin ID
-    if (typeof m.id === "string" && this.activePlugins.includes(m.id)) {
+    if (this.activePlugins.includes(m.id)) {
       conflicts.push(`Plugin "${m.id}" is already active`);
     }
 
-    // Check content_type conflicts (v1 manifests use content_type)
-    if (typeof m.content_type === "string") {
+    // Check conflicts against canonical contributes keys.
+    for (const ct of Object.keys(m.contributes)) {
       if (
-        EXCLUSIVE_CONTENT_TYPES.has(m.content_type) &&
-        this.activeContentTypes.includes(m.content_type)
+        EXCLUSIVE_CONTENT_TYPES.has(ct) &&
+        this.activeContentTypes.includes(ct)
       ) {
         conflicts.push(
-          `Content type "${m.content_type}" is exclusive and already claimed by an active plugin`,
+          `Content type "${ct}" is exclusive and already claimed by an active plugin`,
         );
-      }
-    }
-
-    // Check contentTypes conflicts (v2 manifests use contentTypes array)
-    if (Array.isArray(m.contentTypes)) {
-      for (const ct of m.contentTypes) {
-        if (
-          typeof ct === "string" &&
-          EXCLUSIVE_CONTENT_TYPES.has(ct) &&
-          this.activeContentTypes.includes(ct)
-        ) {
-          conflicts.push(
-            `Content type "${ct}" is exclusive and already claimed by an active plugin`,
-          );
-        }
       }
     }
 

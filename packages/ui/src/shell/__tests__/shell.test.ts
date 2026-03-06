@@ -319,6 +319,7 @@ describe('HudShell', () => {
     expect(ToolType.Zone).toBe('zone');
     expect(ToolType.Bulldoze).toBe('bulldoze');
     expect(ToolType.Road).toBe('road');
+    expect(ToolType.Terrain).toBe('terrain');
   });
 
   it('DEFAULT_CITY_STATS is frozen reference', () => {

@@ -15,6 +15,7 @@ export enum ToolType {
   Zone = 'zone',
   Bulldoze = 'bulldoze',
   Road = 'road',
+  Terrain = 'terrain',
 }
 
 /** City stats displayed in top bar */

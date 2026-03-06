@@ -75,19 +75,8 @@ export function getWorkspaceDensity(tag: string): number {
   return entry?.sqmPerJob ?? 25; // default 25 sqm/job
 }
 
-/** Compute tax revenue per tick */
-export function computeTaxRevenue(category: string, population: number, rate: number): number {
-  const bracket = getTaxBracket(category);
-  if (!bracket) return 0;
-  const clampedRate = Math.max(bracket.minRate, Math.min(bracket.maxRate, rate));
-  return Math.floor(population * bracket.revenuePerCapita * clampedRate);
-}
-
-/** Compute growth modifier from tax rate (inverse relationship) */
-export function computeTaxGrowthModifier(rate: number): number {
-  // At 0% tax -> 1.5x growth, at 20% -> 0.5x growth
-  return Math.max(0.5, Math.min(1.5, 1.5 - rate * 5));
-}
+// NOTE: Tax/growth computations are authoritative in Rust/WASM simulation.
+// This module exposes source data tables and validation only.
 
 /** Get department config by id */
 export function getDepartment(id: string): DepartmentConfig | undefined {

@@ -8,6 +8,7 @@ import {
   type ValidationResult,
   type IPluginValidator,
 } from "./types.js";
+import { normalizeForValidation } from "./manifest_input.js";
 
 /** Semver pattern: major.minor.patch with optional pre-release. */
 const SEMVER_PATTERN = /^\d+\.\d+\.\d+(-[\w.]+)?$/;
@@ -17,19 +18,12 @@ export class SchemaValidator implements IPluginValidator {
   readonly stage = ValidationStage.Schema;
 
   validate(manifest: unknown): ValidationResult {
-    if (manifest === null || manifest === undefined || typeof manifest !== "object") {
-      return {
-        stage: this.stage,
-        valid: false,
-        severity: ValidationSeverity.Error,
-        message: "Manifest must be a non-null object",
-      };
-    }
-
-    const m = manifest as Record<string, unknown>;
+    const input = normalizeForValidation(this.stage, manifest);
+    if ("error" in input) return input.error;
+    const m = input.normalized;
 
     // Check id
-    if (typeof m.id !== "string" || m.id.length === 0) {
+    if (m.id.length === 0) {
       return {
         stage: this.stage,
         valid: false,
@@ -40,7 +34,7 @@ export class SchemaValidator implements IPluginValidator {
     }
 
     // Check version (semver pattern)
-    if (typeof m.version !== "string" || !SEMVER_PATTERN.test(m.version)) {
+    if (!SEMVER_PATTERN.test(m.version)) {
       return {
         stage: this.stage,
         valid: false,
@@ -51,7 +45,7 @@ export class SchemaValidator implements IPluginValidator {
     }
 
     // Check name
-    if (typeof m.name !== "string" || m.name.length === 0) {
+    if (m.name.length === 0) {
       return {
         stage: this.stage,
         valid: false,

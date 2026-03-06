@@ -12,9 +12,16 @@ import {
 export class ValidationPipeline {
   private readonly validators: IPluginValidator[] = [];
 
+  constructor(validators?: ReadonlyArray<IPluginValidator>) {
+    if (validators) {
+      this.validators.push(...validators);
+    }
+  }
+
   /** Add a validator to the end of the chain. */
-  addValidator(validator: IPluginValidator): void {
+  addValidator(validator: IPluginValidator): this {
     this.validators.push(validator);
+    return this;
   }
 
   /**

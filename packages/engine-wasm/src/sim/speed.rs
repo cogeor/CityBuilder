@@ -4,9 +4,11 @@
 //! When the speed is `Paused` the tick body is skipped entirely and the
 //! world state is not mutated.
 
+use serde::{Deserialize, Serialize};
+
 /// The four discrete speed levels available to the player.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SimSpeed {
     /// Simulation is frozen — no world state changes occur.
     Paused = 0,

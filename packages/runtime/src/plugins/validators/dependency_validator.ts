@@ -7,6 +7,7 @@ import {
   type ValidationResult,
   type IPluginValidator,
 } from "./types.js";
+import { normalizeForValidation } from "./manifest_input.js";
 
 /** Validates that a manifest's declared dependencies are all available. */
 export class DependencyValidator implements IPluginValidator {
@@ -21,30 +22,13 @@ export class DependencyValidator implements IPluginValidator {
   }
 
   validate(manifest: unknown): ValidationResult {
-    if (manifest === null || manifest === undefined || typeof manifest !== "object") {
-      return {
-        stage: this.stage,
-        valid: false,
-        severity: ValidationSeverity.Error,
-        message: "Manifest must be a non-null object",
-      };
-    }
-
-    const m = manifest as Record<string, unknown>;
-
-    // If no dependencies array, pass (schema validator handles structure)
-    if (!Array.isArray(m.dependencies)) {
-      return {
-        stage: this.stage,
-        valid: true,
-        severity: ValidationSeverity.Info,
-        message: "No dependencies declared",
-      };
-    }
+    const input = normalizeForValidation(this.stage, manifest);
+    if ("error" in input) return input.error;
+    const m = input.normalized;
 
     const missing: string[] = [];
     for (const dep of m.dependencies) {
-      if (typeof dep === "string" && !this.availableIds.has(dep)) {
+      if (!this.availableIds.has(dep)) {
         missing.push(dep);
       }
     }

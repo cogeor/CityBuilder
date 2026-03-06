@@ -8,6 +8,7 @@ import {
   type ValidationResult,
   type IPluginValidator,
 } from "./types.js";
+import { normalizeForValidation } from "./manifest_input.js";
 
 /** Validates that a manifest's author is in the trusted sources list. */
 export class TrustValidator implements IPluginValidator {
@@ -23,14 +24,9 @@ export class TrustValidator implements IPluginValidator {
   }
 
   validate(manifest: unknown): ValidationResult {
-    if (manifest === null || manifest === undefined || typeof manifest !== "object") {
-      return {
-        stage: this.stage,
-        valid: false,
-        severity: ValidationSeverity.Error,
-        message: "Manifest must be a non-null object",
-      };
-    }
+    const input = normalizeForValidation(this.stage, manifest);
+    if ("error" in input) return input.error;
+    const m = input.normalized;
 
     // If no trusted sources defined, trust everything
     if (this.trustedSources.size === 0) {
@@ -42,8 +38,7 @@ export class TrustValidator implements IPluginValidator {
       };
     }
 
-    const m = manifest as Record<string, unknown>;
-    const author = typeof m.author === "string" ? m.author : "";
+    const author = m.author;
 
     if (author.length === 0) {
       return {
