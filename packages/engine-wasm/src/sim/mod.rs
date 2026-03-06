@@ -6,6 +6,7 @@ pub mod plugins;
 pub mod scheduler;
 pub mod scheduling;
 pub mod systems;
+pub mod sim_map;
 pub mod speed;
 pub mod tick;
 
