@@ -1,13 +1,13 @@
 //! Per-tile bitmap data model.
 //!
-//! Packs all tile state into 4 bytes per tile (`TileValue`), mirroring the
+//! Packs all tile state into 5 bytes per tile (`TileValue`), mirroring the
 //! SimCity C bitmap approach in safe, typed Rust.
-//! A 256x256 map holds 262 144 tiles = 1 MiB of tile data.
+//! A 256x256 map holds 262 144 tiles = ~1.25 MiB of tile data.
 
 use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
 
-use crate::core_types::{TerrainType, ZoneType};
+use crate::core_types::{TerrainType, ZoneDensity, ZoneType};
 
 // ─── TileKind ────────────────────────────────────────────────────────────────
 
@@ -82,23 +82,21 @@ impl<'de> serde::Deserialize<'de> for TileFlags {
 
 // ─── TileValue ───────────────────────────────────────────────────────────────
 
-/// Packed per-tile data: exactly 4 bytes.
+/// Packed per-tile data: exactly 5 bytes.
 ///
 /// Field layout (all fields are `u8`-sized enums or newtypes):
 ///   byte 0 — terrain: TerrainType
 ///   byte 1 — kind:    TileKind
 ///   byte 2 — zone:    ZoneType  (None when kind != Zone / Building)
-///   byte 3 — flags:   TileFlags
-///
-/// Density is encoded in `flags` bits 6-7 (reserved, to be used by a later
-/// loop) or in the `data` supplementary byte provided by the caller. For now,
-/// density is left to the higher-level building/zone system.
+///   byte 3 — density: ZoneDensity  (Low when zone == None)
+///   byte 4 — flags:   TileFlags
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(C)]
 pub struct TileValue {
     pub terrain: TerrainType,
     pub kind:    TileKind,
     pub zone:    ZoneType,
+    pub density: ZoneDensity,
     pub flags:   TileFlags,
 }
 
@@ -108,6 +106,7 @@ impl TileValue {
         terrain: TerrainType::Grass,
         kind:    TileKind::Empty,
         zone:    ZoneType::None,
+        density: ZoneDensity::Low,
         flags:   TileFlags::NONE,
     };
 }
@@ -282,6 +281,18 @@ impl TileMap {
         }
     }
 
+    /// Set the zone density on the tile at `(x, y)`. Returns `false` if out
+    /// of bounds.
+    #[inline]
+    pub fn set_density(&mut self, x: u32, y: u32, density: ZoneDensity) -> bool {
+        if let Some(t) = self.get_mut(x, y) {
+            t.density = density;
+            true
+        } else {
+            false
+        }
+    }
+
     /// Set the terrain on the tile at `(x, y)`. Returns `false` if out of bounds.
     #[inline]
     pub fn set_terrain(&mut self, x: u32, y: u32, terrain: TerrainType) -> bool {
@@ -343,8 +354,21 @@ mod tests {
     // ── Size assertions ──────────────────────────────────────────────────────
 
     #[test]
-    fn tile_value_is_four_bytes() {
-        assert_eq!(mem::size_of::<TileValue>(), 4);
+    fn tile_value_is_five_bytes() {
+        assert_eq!(mem::size_of::<TileValue>(), 5);
+    }
+
+    #[test]
+    fn tile_value_default_density_is_low() {
+        assert_eq!(TileValue::DEFAULT.density, ZoneDensity::Low);
+    }
+
+    #[test]
+    fn tilemap_set_density() {
+        let mut m = TileMap::new(4, 4);
+        assert!(m.set_density(1, 2, ZoneDensity::High));
+        assert_eq!(m.get(1, 2).unwrap().density, ZoneDensity::High);
+        assert!(!m.set_density(10, 10, ZoneDensity::Medium)); // out of bounds
     }
 
     #[test]

@@ -168,6 +168,7 @@ mod tests {
             terrain: TerrainType::Sand,
             kind: TileKind::Empty,
             zone: ZoneType::Commercial,
+            density: ZoneDensity::Low,
             flags: TileFlags::NONE,
         };
         assert!(grid.set(3, 4, tile));

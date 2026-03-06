@@ -82,7 +82,7 @@ pub struct SaveHeader {
 /// - Header (42 bytes)
 /// - City name (variable, `city_name_len` bytes)
 /// - CityPolicies (8 bytes, 8 sequential u8 fields)
-/// - Tile data (4 bytes per tile: terrain, elevation, zone, water)
+/// - Tile data (5 bytes per tile: terrain, kind, zone, density, flags)
 /// - Entity data (11 bytes per alive entity)
 pub fn serialize_world(world: &WorldState) -> Vec<u8> {
     let map_w = world.tiles.width() as u16;
@@ -93,7 +93,7 @@ pub fn serialize_world(world: &WorldState) -> Vec<u8> {
 
     let tile_count = map_w as usize * map_h as usize;
     let estimated_size =
-        HEADER_SIZE + name_len as usize + 8 + tile_count * 4 + entity_count as usize * 11;
+        HEADER_SIZE + name_len as usize + 8 + tile_count * 5 + entity_count as usize * 11;
     let mut buf = Vec::with_capacity(estimated_size);
 
     // ── Header ──
@@ -124,9 +124,10 @@ pub fn serialize_world(world: &WorldState) -> Vec<u8> {
     for y in 0..map_h as u32 {
         for x in 0..map_w as u32 {
             if let Some(tile) = world.tiles.get(x, y) {
-                buf.push(tile.terrain as u8);
-                buf.push(tile.kind   as u8);
-                buf.push(tile.zone   as u8);
+                buf.push(tile.terrain  as u8);
+                buf.push(tile.kind     as u8);
+                buf.push(tile.zone     as u8);
+                buf.push(tile.density  as u8);
                 buf.push(tile.flags.bits());
             }
         }
@@ -259,6 +260,15 @@ fn zone_from_u8(v: u8) -> Result<ZoneType, SaveError> {
     }
 }
 
+fn density_from_u8(v: u8) -> Result<ZoneDensity, SaveError> {
+    match v {
+        0 => Ok(ZoneDensity::Low),
+        1 => Ok(ZoneDensity::Medium),
+        2 => Ok(ZoneDensity::High),
+        _ => Err(SaveError::CorruptData(format!("invalid zone density: {}", v))),
+    }
+}
+
 // ─── Deserialize ────────────────────────────────────────────────────────────
 
 /// Deserialize a binary byte buffer into a WorldState.
@@ -308,7 +318,7 @@ pub fn deserialize_world(data: &[u8]) -> Result<WorldState, SaveError> {
     let tile_count = size.area() as usize;
 
     // Validate we have enough data for tiles
-    let tile_data_size = tile_count * 4;
+    let tile_data_size = tile_count * 5;
     if cursor.remaining() < tile_data_size {
         return Err(SaveError::InsufficientData);
     }
@@ -319,8 +329,9 @@ pub fn deserialize_world(data: &[u8]) -> Result<WorldState, SaveError> {
             let terrain = terrain_from_u8(cursor.read_u8()?)?;
             let kind    = kind_from_u8(cursor.read_u8()?)?;
             let zone    = zone_from_u8(cursor.read_u8()?)?;
+            let density = density_from_u8(cursor.read_u8()?)?;
             let flags   = TileFlags::from_bits_retain(cursor.read_u8()?);
-            tiles.set(x, y, TileValue { terrain, kind, zone, flags });
+            tiles.set(x, y, TileValue { terrain, kind, zone, density, flags });
         }
     }
 
@@ -612,6 +623,7 @@ mod tests {
                 terrain: TerrainType::Sand,
                 kind: TileKind::Zone,
                 zone: ZoneType::Commercial,
+                density: ZoneDensity::Low,
                 flags: TileFlags::NONE,
             },
         );
@@ -622,6 +634,7 @@ mod tests {
                 terrain: TerrainType::Water,
                 kind: TileKind::Empty,
                 zone: ZoneType::None,
+                density: ZoneDensity::Low,
                 flags: TileFlags::NONE,
             },
         );
@@ -632,6 +645,7 @@ mod tests {
                 terrain: TerrainType::Rock,
                 kind: TileKind::Zone,
                 zone: ZoneType::Industrial,
+                density: ZoneDensity::Low,
                 flags: TileFlags::NONE,
             },
         );
@@ -705,7 +719,7 @@ mod tests {
         let data = serialize_world(&world);
         // Truncate in the middle of tile data
         let header_and_name = HEADER_SIZE + world.city_name.len() + 8; // +8 for policies
-        let truncated = &data[..header_and_name + 5]; // only 5 bytes of tile data (need 64)
+        let truncated = &data[..header_and_name + 5]; // only 5 bytes of tile data (need 80)
         let err = deserialize_world(truncated).unwrap_err();
         assert_eq!(err, SaveError::InsufficientData);
     }
