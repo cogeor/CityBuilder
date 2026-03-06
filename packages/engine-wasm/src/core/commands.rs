@@ -49,6 +49,9 @@ pub enum Command {
         w: u8,
         h: u8,
         zone: ZoneType,
+        /// Density tier to paint; defaults to Low when absent.
+        #[serde(default)]
+        density: ZoneDensity,
     },
     SetTerrain {
         x: i16,
@@ -255,20 +258,26 @@ pub fn apply_command_with_registry(
             })
         }
 
-        Command::SetZoning { x, y, w, h, zone } => {
+        Command::SetZoning { x, y, w, h, zone, density } => {
             let mut count = 0u32;
             for dy in 0..*h as i16 {
                 for dx in 0..*w as i16 {
                     let cx = *x + dx;
                     let cy = *y + dy;
-                    if cx >= 0 && cy >= 0 && world.tiles.set_zone(cx as u32, cy as u32, *zone) {
+                    // Skip water tiles — zone paint must not apply to non-buildable terrain
+                    if cx < 0 || cy < 0 || !world.is_buildable(cx, cy) {
+                        continue;
+                    }
+                    if world.tiles.set_zone(cx as u32, cy as u32, *zone) {
+                        world.tiles.set_density(cx as u32, cy as u32, *density);
                         count += 1;
                     }
                 }
             }
-            // City-builder UX default: larger zoning drags create collector roads
-            // on the rectangle perimeter to keep new districts connected.
-            if *w >= 4 && *h >= 4 {
+            // City-builder UX default: any zoning rect (even 1 tile wide) creates
+            // collector roads on the perimeter to keep new districts connected.
+            // Changed from `w >= 4 && h >= 4` to fire for any valid rect.
+            if *w >= 1 || *h >= 1 {
                 let Some(road_graph) = road_graph else {
                     return Ok(CommandEffect::ZoningApplied { count });
                 };
@@ -889,6 +898,7 @@ mod tests {
             w: 3,
             h: 3,
             zone: ZoneType::Residential,
+            density: ZoneDensity::Low,
         };
         let result = apply_command(&mut world, &cmd).unwrap();
         match result {
@@ -917,6 +927,7 @@ mod tests {
             w: 1,
             h: 1,
             zone: ZoneType::Industrial,
+            density: ZoneDensity::Low,
         };
         assert_eq!(apply_command(&mut world, &cmd), Err(CommandError::OutOfBounds));
     }
@@ -931,6 +942,7 @@ mod tests {
             w: 4,
             h: 4,
             zone: ZoneType::Commercial,
+            density: ZoneDensity::Low,
         };
         let result = apply_command(&mut world, &cmd).unwrap();
         match result {
@@ -1058,6 +1070,7 @@ mod tests {
                 w: 2,
                 h: 2,
                 zone: ZoneType::Industrial,
+                density: ZoneDensity::Low,
             },
         )
         .unwrap();

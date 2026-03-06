@@ -12,6 +12,37 @@ use crate::core_types::*;
 /// Default build time in ticks when archetype is not found in the registry.
 const DEFAULT_BUILD_TIME_TICKS: u32 = 1000;
 
+// ─── ConstructionPhase ────────────────────────────────────────────────────────
+
+/// Visual milestone bands for a building under construction.
+///
+/// Divides the u16 progress range (0x0000..0xFFFF) into five equal bands.
+/// Used by the renderer to select the appropriate sprite per construction stage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConstructionPhase {
+    /// 0x0000..0x3FFF — Foundation poured.
+    Foundation,
+    /// 0x4000..0x7FFF — Frame erected.
+    Framing,
+    /// 0x8000..0xBFFF — Roof installed.
+    Roofed,
+    /// 0xC000..0xFFFE — Interior finishing.
+    Finishing,
+    /// 0xFFFF — Construction complete; entity is active.
+    Complete,
+}
+
+/// Map a u16 construction progress value to the corresponding `ConstructionPhase`.
+pub fn construction_phase(progress: u16) -> ConstructionPhase {
+    match progress {
+        0x0000..=0x3FFF => ConstructionPhase::Foundation,
+        0x4000..=0x7FFF => ConstructionPhase::Framing,
+        0x8000..=0xBFFF => ConstructionPhase::Roofed,
+        0xC000..=0xFFFE => ConstructionPhase::Finishing,
+        0xFFFF          => ConstructionPhase::Complete,
+    }
+}
+
 /// Advance construction for all entities under construction.
 /// Returns the number of buildings completed this tick.
 pub fn tick_construction(
@@ -354,6 +385,41 @@ mod tests {
     fn ticks_remaining_invalid_handle() {
         let (entities, registry, _, _) = setup(100);
         assert!(ticks_remaining(&entities, &registry, EntityHandle::INVALID).is_none());
+    }
+
+    // ── ConstructionPhase boundaries ─────────────────────────────────────
+
+    #[test]
+    fn construction_phase_foundation_band() {
+        assert_eq!(construction_phase(0x0000), ConstructionPhase::Foundation);
+        assert_eq!(construction_phase(0x1000), ConstructionPhase::Foundation);
+        assert_eq!(construction_phase(0x3FFF), ConstructionPhase::Foundation);
+    }
+
+    #[test]
+    fn construction_phase_framing_band() {
+        assert_eq!(construction_phase(0x4000), ConstructionPhase::Framing);
+        assert_eq!(construction_phase(0x5000), ConstructionPhase::Framing);
+        assert_eq!(construction_phase(0x7FFF), ConstructionPhase::Framing);
+    }
+
+    #[test]
+    fn construction_phase_roofed_band() {
+        assert_eq!(construction_phase(0x8000), ConstructionPhase::Roofed);
+        assert_eq!(construction_phase(0xAFFF), ConstructionPhase::Roofed);
+        assert_eq!(construction_phase(0xBFFF), ConstructionPhase::Roofed);
+    }
+
+    #[test]
+    fn construction_phase_finishing_band() {
+        assert_eq!(construction_phase(0xC000), ConstructionPhase::Finishing);
+        assert_eq!(construction_phase(0xEFFF), ConstructionPhase::Finishing);
+        assert_eq!(construction_phase(0xFFFE), ConstructionPhase::Finishing);
+    }
+
+    #[test]
+    fn construction_phase_complete() {
+        assert_eq!(construction_phase(0xFFFF), ConstructionPhase::Complete);
     }
 
     #[test]

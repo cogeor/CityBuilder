@@ -533,6 +533,7 @@ mod tests {
             w: 1,
             h: 1,
             zone: ZoneType::Residential,
+            density: ZoneDensity::Low,
         };
         assert!(engine.apply_command(&zone).is_ok());
 
@@ -635,6 +636,7 @@ mod tests {
                 w: 1,
                 h: 1,
                 zone: ZoneType::Residential,
+                density: ZoneDensity::Low,
             })
             .is_ok());
 
@@ -698,6 +700,7 @@ mod tests {
                 w: 1,
                 h: 1,
                 zone: ZoneType::Residential,
+                density: ZoneDensity::Low,
             })
             .is_ok());
 
@@ -730,6 +733,7 @@ mod tests {
             w: 8,
             h: 8,
             zone: ZoneType::Residential,
+            density: ZoneDensity::Low,
         };
         assert!(engine.apply_command(&zoning).is_ok());
 
@@ -854,6 +858,7 @@ mod tests {
                     w: 1,
                     h: 1,
                     zone: ZoneType::Residential,
+                    density: ZoneDensity::Low,
                 })
                 .unwrap();
             engine
@@ -900,6 +905,7 @@ mod tests {
                     w: 1,
                     h: 1,
                     zone: ZoneType::Residential,
+                    density: ZoneDensity::Low,
                 })
                 .unwrap();
             engine
@@ -950,6 +956,7 @@ mod tests {
                     w: 1,
                     h: 1,
                     zone: ZoneType::Residential,
+                    density: ZoneDensity::Low,
                 })
                 .is_ok());
             assert!(engine
