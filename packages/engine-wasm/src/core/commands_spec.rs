@@ -343,6 +343,7 @@ pub fn validate_command_with_registry(
             }
         }
         Command::SetPolicy { .. } => Ok(()),
+        Command::RemoveRoad { x, y } => zone_spec(*x, *y).check(world),
     }
 }
 

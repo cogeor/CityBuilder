@@ -56,6 +56,58 @@ pub struct RoadSegment {
     pub road_type: RoadType,
 }
 
+/// Which cardinal directions a road tile connects to, encoded as a 4-bit NSEW mask.
+///
+/// Bit layout: `N=bit3  S=bit2  E=bit1  W=bit0`
+///
+/// The discriminant equals the mask value, making `ROAD_TABLE` a zero-cost array lookup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[repr(u8)]
+pub enum RoadTileVariant {
+    Empty = 0b0000, //  0 – no connections
+    W     = 0b0001, //  1 – west stub
+    E     = 0b0010, //  2 – east stub
+    EW    = 0b0011, //  3 – straight east–west
+    S     = 0b0100, //  4 – south stub
+    SW    = 0b0101, //  5 – south + west corner
+    SE    = 0b0110, //  6 – south + east corner
+    SEW   = 0b0111, //  7 – T south/east/west
+    N     = 0b1000, //  8 – north stub
+    NW    = 0b1001, //  9 – north + west corner
+    NE    = 0b1010, // 10 – north + east corner
+    NEW   = 0b1011, // 11 – T north/east/west
+    NS    = 0b1100, // 12 – straight north–south
+    NSW   = 0b1101, // 13 – T north/south/west
+    NSE   = 0b1110, // 14 – T north/south/east
+    Cross = 0b1111, // 15 – four-way intersection
+}
+
+/// Lookup table: index is the 4-bit NSEW mask, value is the corresponding variant.
+///
+/// ```
+/// use engine_wasm::core::network::{ROAD_TABLE, RoadTileVariant};
+/// assert_eq!(ROAD_TABLE[0b1111], RoadTileVariant::Cross);
+/// assert_eq!(ROAD_TABLE[0b1100], RoadTileVariant::NS);
+/// ```
+pub const ROAD_TABLE: [RoadTileVariant; 16] = [
+    RoadTileVariant::Empty, //  0
+    RoadTileVariant::W,     //  1
+    RoadTileVariant::E,     //  2
+    RoadTileVariant::EW,    //  3
+    RoadTileVariant::S,     //  4
+    RoadTileVariant::SW,    //  5
+    RoadTileVariant::SE,    //  6
+    RoadTileVariant::SEW,   //  7
+    RoadTileVariant::N,     //  8
+    RoadTileVariant::NW,    //  9
+    RoadTileVariant::NE,    // 10
+    RoadTileVariant::NEW,   // 11
+    RoadTileVariant::NS,    // 12
+    RoadTileVariant::NSW,   // 13
+    RoadTileVariant::NSE,   // 14
+    RoadTileVariant::Cross, // 15
+];
+
 /// Key for an edge between two tile coordinates (normalized so a < b).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct EdgeKey {
@@ -215,6 +267,46 @@ impl RoadGraph {
     /// Iterate over all nodes.
     pub fn iter_nodes(&self) -> impl Iterator<Item = &TileCoord> {
         self.nodes.iter()
+    }
+
+    /// Return the 4-bit NSEW connection mask for `pos`.
+    ///
+    /// Bit layout: `N=bit3  S=bit2  E=bit1  W=bit0`
+    ///
+    /// A bit is set when the corresponding neighbor tile is present in the road graph.
+    /// Combine with `ROAD_TABLE` for tile-sprite selection:
+    ///
+    /// ```ignore
+    /// let variant = ROAD_TABLE[graph.connection_bits(pos) as usize];
+    /// ```
+    pub fn connection_bits(&self, pos: TileCoord) -> u8 {
+        let north = TileCoord::new(pos.x,     pos.y - 1);
+        let south = TileCoord::new(pos.x,     pos.y + 1);
+        let east  = TileCoord::new(pos.x + 1, pos.y    );
+        let west  = TileCoord::new(pos.x - 1, pos.y    );
+
+        let mut bits: u8 = 0;
+        if self.has_road_at(north) { bits |= 0b1000; } // N = bit 3
+        if self.has_road_at(south) { bits |= 0b0100; } // S = bit 2
+        if self.has_road_at(east)  { bits |= 0b0010; } // E = bit 1
+        if self.has_road_at(west)  { bits |= 0b0001; } // W = bit 0
+        bits
+    }
+
+    /// Return `true` if any cardinal neighbor of `(x, y)` has a road node.
+    ///
+    /// Used by zone/building placement to verify road access without requiring
+    /// the queried tile itself to be a road tile.
+    pub fn has_road_access(&self, x: i16, y: i16) -> bool {
+        let north = TileCoord::new(x,     y - 1);
+        let south = TileCoord::new(x,     y + 1);
+        let east  = TileCoord::new(x + 1, y    );
+        let west  = TileCoord::new(x - 1, y    );
+
+        self.has_road_at(north)
+            || self.has_road_at(south)
+            || self.has_road_at(east)
+            || self.has_road_at(west)
     }
 }
 
@@ -512,5 +604,99 @@ mod tests {
         let g = RoadGraph::default();
         assert_eq!(g.edge_count(), 0);
         assert_eq!(g.node_count(), 0);
+    }
+
+    // ── RoadTileVariant & ROAD_TABLE ────────────────────────────────────
+
+    #[test]
+    fn road_table_spot_checks() {
+        assert_eq!(ROAD_TABLE[0],  RoadTileVariant::Empty);
+        assert_eq!(ROAD_TABLE[3],  RoadTileVariant::EW);
+        assert_eq!(ROAD_TABLE[12], RoadTileVariant::NS);
+        assert_eq!(ROAD_TABLE[15], RoadTileVariant::Cross);
+    }
+
+    #[test]
+    fn road_table_all_variants_reachable() {
+        // Every variant appears exactly once in the table.
+        use std::collections::HashSet;
+        let set: HashSet<u8> = ROAD_TABLE.iter().map(|v| *v as u8).collect();
+        assert_eq!(set.len(), 16);
+    }
+
+    // ── connection_bits ─────────────────────────────────────────────────
+
+    #[test]
+    fn connection_bits_isolated_tile() {
+        let mut g = RoadGraph::new();
+        // A single node has no neighbors, so bits should be 0.
+        g.add_segment(tc(5, 5), tc(5, 6), RoadType::Local);
+        // tc(5,5) has a neighbor at tc(5,6) which is South (y+1).
+        assert_eq!(g.connection_bits(tc(5, 5)), 0b0100); // S bit
+    }
+
+    #[test]
+    fn connection_bits_straight_ew() {
+        let mut g = RoadGraph::new();
+        // West -- Center -- East
+        g.add_segment(tc(4, 0), tc(5, 0), RoadType::Local);
+        g.add_segment(tc(5, 0), tc(6, 0), RoadType::Local);
+        // Center sees East (bit1) and West (bit0).
+        assert_eq!(g.connection_bits(tc(5, 0)), 0b0011); // EW
+        assert_eq!(ROAD_TABLE[g.connection_bits(tc(5, 0)) as usize], RoadTileVariant::EW);
+    }
+
+    #[test]
+    fn connection_bits_cross() {
+        let mut g = RoadGraph::new();
+        let center = tc(5, 5);
+        g.add_segment(center, tc(5, 4), RoadType::Local); // N
+        g.add_segment(center, tc(5, 6), RoadType::Local); // S
+        g.add_segment(center, tc(6, 5), RoadType::Local); // E
+        g.add_segment(center, tc(4, 5), RoadType::Local); // W
+        assert_eq!(g.connection_bits(center), 0b1111);
+        assert_eq!(ROAD_TABLE[g.connection_bits(center) as usize], RoadTileVariant::Cross);
+    }
+
+    #[test]
+    fn connection_bits_empty_graph() {
+        let g = RoadGraph::new();
+        assert_eq!(g.connection_bits(tc(0, 0)), 0);
+    }
+
+    // ── has_road_access ─────────────────────────────────────────────────
+
+    #[test]
+    fn has_road_access_adjacent_north() {
+        let mut g = RoadGraph::new();
+        // Road one tile north of the queried position.
+        g.add_segment(tc(3, 3), tc(4, 3), RoadType::Local);
+        // Queried tile is (3,4): north neighbor (3,3) has a road.
+        assert!(g.has_road_access(3, 4));
+    }
+
+    #[test]
+    fn has_road_access_no_neighbors() {
+        let mut g = RoadGraph::new();
+        g.add_segment(tc(0, 0), tc(1, 0), RoadType::Local);
+        // Position (10,10) has no road neighbors.
+        assert!(!g.has_road_access(10, 10));
+    }
+
+    #[test]
+    fn has_road_access_empty_graph() {
+        let g = RoadGraph::new();
+        assert!(!g.has_road_access(0, 0));
+    }
+
+    #[test]
+    fn has_road_access_all_four_directions() {
+        let mut g = RoadGraph::new();
+        // Build roads in all four cardinal directions from (5,5).
+        g.add_segment(tc(5, 4), tc(5, 3), RoadType::Local); // north
+        g.add_segment(tc(5, 6), tc(5, 7), RoadType::Local); // south
+        g.add_segment(tc(6, 5), tc(7, 5), RoadType::Local); // east
+        g.add_segment(tc(4, 5), tc(3, 5), RoadType::Local); // west
+        assert!(g.has_road_access(5, 5));
     }
 }

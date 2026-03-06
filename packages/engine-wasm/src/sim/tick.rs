@@ -257,7 +257,8 @@ impl SimulationEngine {
             | CommandEffect::EntityToggled { .. }
             | CommandEffect::ZoningApplied { .. }
             | CommandEffect::TerrainApplied { .. }
-            | CommandEffect::RoadLineApplied { .. } => {}
+            | CommandEffect::RoadLineApplied { .. }
+            | CommandEffect::RoadRemoved { .. } => {}
         }
     }
 
@@ -305,7 +306,8 @@ impl SimulationEngine {
             CommandEffect::TilesBulldozed { .. }
             | CommandEffect::ZoningApplied { .. }
             | CommandEffect::TerrainApplied { .. }
-            | CommandEffect::RoadLineApplied { .. } => {}
+            | CommandEffect::RoadLineApplied { .. }
+            | CommandEffect::RoadRemoved { .. } => {}
         }
     }
 }

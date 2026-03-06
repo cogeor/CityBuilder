@@ -8,6 +8,7 @@ use crate::core::archetypes::ArchetypeRegistry;
 use crate::core::commands_spec;
 use crate::core::math_util::rects_overlap;
 use crate::core::network::{RoadGraph, RoadType};
+use crate::core::tilemap::TileMap;
 use crate::core::world::{CityPolicies, WorldState};
 use crate::core_types::*;
 use serde::{Deserialize, Serialize};
@@ -63,6 +64,10 @@ pub enum Command {
         y1: i16,
         road_type: RoadType,
     },
+    RemoveRoad {
+        x: i16,
+        y: i16,
+    },
 }
 
 /// Policy keys that can be changed via SetPolicy command.
@@ -114,6 +119,7 @@ pub enum CommandEffect {
     ZoningApplied { count: u32 },
     TerrainApplied { count: u32 },
     RoadLineApplied { count: u32 },
+    RoadRemoved { x: i16, y: i16 },
 }
 
 /// Apply a command to the world state after validation.
@@ -357,6 +363,50 @@ pub fn apply_command_with_registry(
 
             Ok(CommandEffect::RoadLineApplied { count })
         }
+
+        Command::RemoveRoad { x, y } => {
+            use crate::core::tilemap::{TileFlags, TileKind};
+
+            let Some(road_graph) = road_graph else {
+                return Err(CommandError::ValidationFailed(
+                    "road graph unavailable".to_string(),
+                ));
+            };
+
+            let pos = TileCoord::new(*x, *y);
+
+            // Collect all neighbors of this road node before removing edges.
+            let neighbors: Vec<TileCoord> = road_graph
+                .neighbors(pos)
+                .iter()
+                .map(|(n, _)| *n)
+                .collect();
+
+            // Remove all edges from this position.
+            for neighbor in &neighbors {
+                road_graph.remove_segment(pos, *neighbor);
+            }
+
+            // Clear CONDUCTOR flag and tile kind on the removed road tile.
+            if *x >= 0 && *y >= 0 && world.tiles.in_bounds(*x as u32, *y as u32) {
+                world.tiles.clear_flags(*x as u32, *y as u32, TileFlags::CONDUCTOR);
+                if let Some(t) = world.tiles.get_mut(*x as u32, *y as u32) {
+                    if t.kind == TileKind::Road {
+                        t.kind = TileKind::Empty;
+                    }
+                }
+            }
+
+            // Update ROAD_ACCESS on the four cardinal neighbors.
+            update_road_access(&mut world.tiles, road_graph, *x, *y);
+
+            // Also update ROAD_ACCESS for all former neighbors (their connectivity changed).
+            for neighbor in &neighbors {
+                update_road_access(&mut world.tiles, road_graph, neighbor.x, neighbor.y);
+            }
+
+            Ok(CommandEffect::RoadRemoved { x: *x, y: *y })
+        }
     }
 }
 
@@ -382,9 +432,41 @@ fn try_add_road_segment(
     if road_graph.add_segment(TileCoord::new(ax, ay), TileCoord::new(bx, by), road_type) {
         world.tiles.set_flags(ax as u32, ay as u32, TileFlags::CONDUCTOR);
         world.tiles.set_flags(bx as u32, by as u32, TileFlags::CONDUCTOR);
+        update_road_access(&mut world.tiles, road_graph, ax, ay);
+        update_road_access(&mut world.tiles, road_graph, bx, by);
         true
     } else {
         false
+    }
+}
+
+/// Update the `ROAD_ACCESS` flag on all four cardinal neighbors of `(x, y)`.
+///
+/// Sets `ROAD_ACCESS` on a neighbor when `road_graph.has_road_access` returns true
+/// for that neighbor's position, clears it when false.
+fn update_road_access(tiles: &mut TileMap, road_graph: &RoadGraph, x: i16, y: i16) {
+    use crate::core::tilemap::TileFlags;
+
+    let neighbors: [(i16, i16); 4] = [
+        (x,     y - 1), // N
+        (x,     y + 1), // S
+        (x + 1, y    ), // E
+        (x - 1, y    ), // W
+    ];
+
+    for (nx, ny) in neighbors {
+        if nx < 0 || ny < 0 {
+            continue;
+        }
+        let (unx, uny) = (nx as u32, ny as u32);
+        if !tiles.in_bounds(unx, uny) {
+            continue;
+        }
+        if road_graph.has_road_access(nx, ny) {
+            tiles.set_flags(unx, uny, TileFlags::ROAD_ACCESS);
+        } else {
+            tiles.clear_flags(unx, uny, TileFlags::ROAD_ACCESS);
+        }
     }
 }
 
@@ -421,6 +503,8 @@ fn set_policy_value(policies: &mut CityPolicies, key: PolicyKey, value: u8) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::network::RoadGraph;
+    use crate::core::tilemap::TileFlags;
     use crate::core::world::WorldState;
 
     fn make_world() -> WorldState {
@@ -1018,5 +1102,98 @@ mod tests {
         // 7. Remove the remaining entity
         apply_command(&mut world, &Command::RemoveEntity { handle: h3 }).unwrap();
         assert_eq!(world.entities.count(), 0);
+    }
+
+    // ── update_road_access via SetRoadLine ──────────────────────────────
+
+    #[test]
+    fn set_road_line_sets_road_access_on_neighbors() {
+        let mut world = make_world();
+        let mut road_graph = RoadGraph::new();
+
+        // Place a road segment from (5,5) to (5,6) (vertical).
+        let cmd = Command::SetRoadLine {
+            x0: 5, y0: 5, x1: 5, y1: 6,
+            road_type: crate::core::network::RoadType::Local,
+        };
+        apply_command_with_registry(&mut world, None, Some(&mut road_graph), &cmd).unwrap();
+
+        // Tile (4,5) is a cardinal neighbor of road node (5,5): should have ROAD_ACCESS.
+        let tile = world.tiles.get(4, 5).unwrap();
+        assert!(tile.flags.contains(TileFlags::ROAD_ACCESS), "west neighbor of (5,5) should have ROAD_ACCESS");
+
+        // Tile (6,5) is a cardinal neighbor of road node (5,5): should have ROAD_ACCESS.
+        let tile = world.tiles.get(6, 5).unwrap();
+        assert!(tile.flags.contains(TileFlags::ROAD_ACCESS), "east neighbor of (5,5) should have ROAD_ACCESS");
+    }
+
+    // ── RemoveRoad removes road and clears CONDUCTOR, updates ROAD_ACCESS ─
+
+    #[test]
+    fn remove_road_clears_conductor_and_tile_kind() {
+        let mut world = make_world();
+        let mut road_graph = RoadGraph::new();
+
+        // Add a road segment.
+        let set_cmd = Command::SetRoadLine {
+            x0: 3, y0: 3, x1: 3, y1: 4,
+            road_type: crate::core::network::RoadType::Local,
+        };
+        apply_command_with_registry(&mut world, None, Some(&mut road_graph), &set_cmd).unwrap();
+
+        // Verify CONDUCTOR is set on road tiles.
+        assert!(world.tiles.get(3, 3).unwrap().flags.contains(TileFlags::CONDUCTOR));
+        assert!(world.tiles.get(3, 4).unwrap().flags.contains(TileFlags::CONDUCTOR));
+
+        // Remove road at (3,3).
+        let remove_cmd = Command::RemoveRoad { x: 3, y: 3 };
+        let result = apply_command_with_registry(&mut world, None, Some(&mut road_graph), &remove_cmd).unwrap();
+        assert_eq!(result, CommandEffect::RoadRemoved { x: 3, y: 3 });
+
+        // CONDUCTOR flag should be cleared on (3,3).
+        assert!(!world.tiles.get(3, 3).unwrap().flags.contains(TileFlags::CONDUCTOR));
+
+        // Road graph should no longer have a node at (3,3).
+        assert!(!road_graph.has_road_at(TileCoord::new(3, 3)));
+    }
+
+    #[test]
+    fn remove_road_updates_road_access_on_neighbors() {
+        let mut world = make_world();
+        let mut road_graph = RoadGraph::new();
+
+        // Build road at (5,5)-(5,6).
+        let set_cmd = Command::SetRoadLine {
+            x0: 5, y0: 5, x1: 5, y1: 6,
+            road_type: crate::core::network::RoadType::Local,
+        };
+        apply_command_with_registry(&mut world, None, Some(&mut road_graph), &set_cmd).unwrap();
+
+        // Neighbor (4,5) should have ROAD_ACCESS due to road node at (5,5).
+        assert!(world.tiles.get(4, 5).unwrap().flags.contains(TileFlags::ROAD_ACCESS));
+
+        // Remove road at (5,5).
+        let remove_cmd = Command::RemoveRoad { x: 5, y: 5 };
+        apply_command_with_registry(&mut world, None, Some(&mut road_graph), &remove_cmd).unwrap();
+
+        // (4,5) no longer adjacent to any road — ROAD_ACCESS should be cleared.
+        assert!(!world.tiles.get(4, 5).unwrap().flags.contains(TileFlags::ROAD_ACCESS));
+    }
+
+    #[test]
+    fn remove_road_without_graph_returns_error() {
+        let mut world = make_world();
+        let cmd = Command::RemoveRoad { x: 5, y: 5 };
+        let result = apply_command(&mut world, &cmd);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn remove_road_out_of_bounds_returns_error() {
+        let mut world = make_world();
+        let mut road_graph = RoadGraph::new();
+        let cmd = Command::RemoveRoad { x: -1, y: 0 };
+        let result = apply_command_with_registry(&mut world, None, Some(&mut road_graph), &cmd);
+        assert_eq!(result, Err(CommandError::OutOfBounds));
     }
 }
