@@ -479,6 +479,7 @@ mod tests {
             prerequisites: vec![Prerequisite::RoadAccess],
             workspace_per_job_m2: 30,
             living_space_per_person_m2: 0,
+            effects: vec![],
         }
     }
 
@@ -511,6 +512,7 @@ mod tests {
             prerequisites: vec![],
             workspace_per_job_m2: 0,
             living_space_per_person_m2: 0,
+            effects: vec![],
         }
     }
 

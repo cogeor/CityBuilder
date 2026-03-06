@@ -352,6 +352,7 @@ mod tests {
             prerequisites: vec![],
             workspace_per_job_m2: 15,
             living_space_per_person_m2: 0,
+            effects: vec![],
         }
     }
 

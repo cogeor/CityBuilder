@@ -7,6 +7,28 @@ use city_core::{ArchetypeId, MoneyCents, TILE_AREA_M2};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Kind of spatial effect a building emits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[repr(u8)]
+pub enum EffectKind {
+    Pollution        = 0,
+    LandValue        = 1,
+    Crime            = 2,
+    FireProtection   = 3,
+    PoliceProtection = 4,
+    Power            = 5,
+    Water            = 6,
+    Noise            = 7,
+}
+
+/// A single building effect.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct Effect {
+    pub kind: EffectKind,
+    pub value: i32,
+    pub radius: u8,
+}
+
 /// Tags that classify an archetype.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
@@ -77,6 +99,9 @@ pub struct ArchetypeDefinition {
     pub workspace_per_job_m2: u32,
     /// Living space per person in m².
     pub living_space_per_person_m2: u32,
+    /// Spatial effects emitted by this building.
+    #[serde(default)]
+    pub effects: Vec<Effect>,
 }
 
 impl ArchetypeDefinition {
@@ -172,6 +197,7 @@ mod tests {
             prerequisites: vec![Prerequisite::RoadAccess, Prerequisite::PowerConnection],
             workspace_per_job_m2: 0,
             living_space_per_person_m2: 40,
+            effects: vec![],
         }
     }
 
@@ -193,6 +219,7 @@ mod tests {
             prerequisites: vec![Prerequisite::RoadAccess],
             workspace_per_job_m2: 50,
             living_space_per_person_m2: 0,
+            effects: vec![],
         }
     }
 
@@ -218,6 +245,7 @@ mod tests {
             ],
             workspace_per_job_m2: 25,
             living_space_per_person_m2: 0,
+            effects: vec![],
         }
     }
 

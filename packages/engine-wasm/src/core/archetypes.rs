@@ -7,6 +7,40 @@ use crate::core_types::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+// ─── EffectKind / Effect ─────────────────────────────────────────────────────
+
+/// Kind of spatial effect a building emits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[repr(u8)]
+pub enum EffectKind {
+    Pollution        = 0,
+    LandValue        = 1,
+    Crime            = 2,
+    FireProtection   = 3,
+    PoliceProtection = 4,
+    Power            = 5,
+    Water            = 6,
+    Noise            = 7,
+}
+
+/// Number of distinct effect kinds (used to size fixed arrays).
+pub const EFFECT_KIND_COUNT: usize = 8;
+
+/// A single building effect: kind + signed magnitude + manhattan radius.
+///
+/// Positive `value` is beneficial (LandValue, FireProtection, …).
+/// Negative `value` is harmful (Pollution, Crime, Noise).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct Effect {
+    pub kind: EffectKind,
+    /// Effect strength. Positive = beneficial, negative = harmful.
+    pub value: i32,
+    /// Manhattan radius in tiles. 0 = source tile only.
+    pub radius: u8,
+}
+
+// ─── ArchetypeTag ─────────────────────────────────────────────────────────────
+
 /// Tags that classify an archetype.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
@@ -87,6 +121,9 @@ pub struct ArchetypeDefinition {
     pub workspace_per_job_m2: u32,
     /// Living space per person in m² (for residential; 0 for non-residential).
     pub living_space_per_person_m2: u32,
+    /// Spatial effects emitted by this building (pollution, land value, crime, etc.).
+    #[serde(default)]
+    pub effects: Vec<Effect>,
 }
 
 impl ArchetypeDefinition {
@@ -227,6 +264,7 @@ mod tests {
             prerequisites: vec![Prerequisite::RoadAccess, Prerequisite::PowerConnection],
             workspace_per_job_m2: 0,
             living_space_per_person_m2: 40,
+            effects: vec![],
         }
     }
 
@@ -259,6 +297,7 @@ mod tests {
             prerequisites: vec![Prerequisite::RoadAccess],
             workspace_per_job_m2: 50,
             living_space_per_person_m2: 0,
+            effects: vec![],
         }
     }
 
@@ -295,6 +334,7 @@ mod tests {
             ],
             workspace_per_job_m2: 25,
             living_space_per_person_m2: 0,
+            effects: vec![],
         }
     }
 

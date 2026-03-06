@@ -80,6 +80,7 @@ fn base_city_builder_archetypes() -> Vec<ArchetypeDefinition> {
             prerequisites: vec![],
             workspace_per_job_m2: 0,
             living_space_per_person_m2: 40,
+            effects: vec![],
         },
         ArchetypeDefinition {
             id: ARCH_UTIL_POWER_PLANT,
@@ -108,6 +109,7 @@ fn base_city_builder_archetypes() -> Vec<ArchetypeDefinition> {
             prerequisites: vec![],
             workspace_per_job_m2: 25,
             living_space_per_person_m2: 0,
+            effects: vec![],
         },
         ArchetypeDefinition {
             id: ARCH_UTIL_COAL_PLANT,
@@ -136,6 +138,7 @@ fn base_city_builder_archetypes() -> Vec<ArchetypeDefinition> {
             prerequisites: vec![],
             workspace_per_job_m2: 25,
             living_space_per_person_m2: 0,
+            effects: vec![],
         },
         ArchetypeDefinition {
             id: ARCH_UTIL_WIND_TURBINE,
@@ -164,6 +167,7 @@ fn base_city_builder_archetypes() -> Vec<ArchetypeDefinition> {
             prerequisites: vec![],
             workspace_per_job_m2: 0,
             living_space_per_person_m2: 0,
+            effects: vec![],
         },
         ArchetypeDefinition {
             id: ARCH_INFRA_POWER_LINE,
@@ -192,6 +196,7 @@ fn base_city_builder_archetypes() -> Vec<ArchetypeDefinition> {
             prerequisites: vec![],
             workspace_per_job_m2: 0,
             living_space_per_person_m2: 0,
+            effects: vec![],
         },
         ArchetypeDefinition {
             id: ARCH_CIV_HOSPITAL,
@@ -220,6 +225,7 @@ fn base_city_builder_archetypes() -> Vec<ArchetypeDefinition> {
             prerequisites: vec![],
             workspace_per_job_m2: 15,
             living_space_per_person_m2: 0,
+            effects: vec![],
         },
         ArchetypeDefinition {
             id: ARCH_COM_CORNER_SHOP,
@@ -248,6 +254,7 @@ fn base_city_builder_archetypes() -> Vec<ArchetypeDefinition> {
             prerequisites: vec![],
             workspace_per_job_m2: 20,
             living_space_per_person_m2: 0,
+            effects: vec![],
         },
         ArchetypeDefinition {
             id: ARCH_CIV_SCHOOL,
@@ -276,6 +283,7 @@ fn base_city_builder_archetypes() -> Vec<ArchetypeDefinition> {
             prerequisites: vec![],
             workspace_per_job_m2: 20,
             living_space_per_person_m2: 0,
+            effects: vec![],
         },
         ArchetypeDefinition {
             id: ARCH_IND_LIGHT_FACTORY,
@@ -304,6 +312,7 @@ fn base_city_builder_archetypes() -> Vec<ArchetypeDefinition> {
             prerequisites: vec![],
             workspace_per_job_m2: 30,
             living_space_per_person_m2: 0,
+            effects: vec![],
         },
         ArchetypeDefinition {
             id: ARCH_UTIL_WATER_PUMP,
@@ -332,6 +341,7 @@ fn base_city_builder_archetypes() -> Vec<ArchetypeDefinition> {
             prerequisites: vec![],
             workspace_per_job_m2: 10,
             living_space_per_person_m2: 0,
+            effects: vec![],
         },
     ]
 }
