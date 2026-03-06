@@ -145,6 +145,37 @@ impl GameHandle {
         }
     }
 
+    // -- Tile snapshot -------------------------------------------------------
+
+    /// Return a compact tile snapshot: `width * height * 4` bytes.
+    ///
+    /// Each tile is encoded as `[terrain as u8, elevation, zone as u8, flags_low]`.
+    /// Useful for initial render hydration — the renderer reads this once at
+    /// startup to populate its tile cache without needing a full `WorldDiff`.
+    #[cfg_attr(target_arch = "wasm32", wasm_bindgen)]
+    pub fn get_tile_map_snapshot(&self) -> Vec<u8> {
+        let engine = match &self.engine {
+            Some(e) => e,
+            None => return Vec::new(),
+        };
+        let tiles = &engine.world.tiles;
+        let (w, h) = (tiles.width() as usize, tiles.height() as usize);
+        let mut out = Vec::with_capacity(w * h * 4);
+        for y in 0..h {
+            for x in 0..w {
+                if let Some(tile) = tiles.get(x as u32, y as u32) {
+                    out.push(tile.terrain as u8);
+                    out.push(0u8); // elevation placeholder (flat terrain)
+                    out.push(tile.zone as u8);
+                    out.push(tile.flags.bits());
+                } else {
+                    out.extend_from_slice(&[0, 0, 0, 0]);
+                }
+            }
+        }
+        out
+    }
+
     // -- Save / Load --------------------------------------------------------
 
     /// Serialize the current world state to a byte vector.
@@ -378,5 +409,31 @@ mod tests {
         assert!(cmd_json.contains("error"));
         let save_data = handle.save();
         assert!(save_data.is_empty());
+        let snapshot = handle.get_tile_map_snapshot();
+        assert!(snapshot.is_empty());
+    }
+
+    // ── Test 13: get_tile_map_snapshot returns correct size ─────────────
+
+    #[test]
+    fn tile_snapshot_has_correct_size() {
+        let handle = GameHandle::new(42, 16, 24);
+        let snapshot = handle.get_tile_map_snapshot();
+        assert_eq!(snapshot.len(), 16 * 24 * 4);
+    }
+
+    #[test]
+    fn tile_snapshot_terrain_byte_is_set() {
+        use crate::core::tilemap::TileMap;
+        use crate::core_types::TerrainType;
+        let mut handle = GameHandle::new(1, 4, 4);
+        // Manually set terrain on tile (1,0) to Water.
+        if let Some(engine) = handle.engine.as_mut() {
+            engine.world.tiles.set_terrain(1, 0, TerrainType::Water);
+        }
+        let snapshot = handle.get_tile_map_snapshot();
+        // Tile (1,0) at index 1 → byte 4 (y=0, x=1, offset=1*4=4)
+        let terrain_byte = snapshot[4];
+        assert_eq!(terrain_byte, TerrainType::Water as u8);
     }
 }

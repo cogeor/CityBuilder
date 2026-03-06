@@ -184,7 +184,7 @@ impl SimulationEngine {
                 cmd,
             )
             {
-                self.collect_command_diff(&mut diffs, &effect);
+                self.collect_command_diff(&mut diffs, cmd, &effect);
                 self.collect_invalidation_reason(&mut invalidation_reasons, &effect);
             }
         }
@@ -324,7 +324,12 @@ impl SimulationEngine {
         }
     }
 
-    fn collect_command_diff(&self, collector: &mut DiffCollector, effect: &CommandEffect) {
+    fn collect_command_diff(
+        &self,
+        collector: &mut DiffCollector,
+        cmd: &Command,
+        effect: &CommandEffect,
+    ) {
         match effect {
             CommandEffect::EntityPlaced { handle } => {
                 if let Some(pos) = self.world.entities.get_pos(*handle) {
@@ -365,10 +370,50 @@ impl SimulationEngine {
                     new_value: u32::from(*enabled),
                 });
             }
-            CommandEffect::TilesBulldozed { .. }
-            | CommandEffect::ZoningApplied { .. }
+            // Emit a TileChanged diff for the origin tile of each rect operation
+            // so the renderer knows at least one tile in the affected region changed.
+            CommandEffect::ZoningApplied { count } if *count > 0 => {
+                if let Command::SetZoning { x, y, zone, .. } = cmd {
+                    use crate::core::diffs::TileField;
+                    collector.push_diff(StateDiff::TileChanged {
+                        pos: TileCoord::new(*x, *y),
+                        field: TileField::Zone(*zone),
+                    });
+                }
+            }
+            CommandEffect::TerrainApplied { count } if *count > 0 => {
+                if let Command::SetTerrain { x, y, terrain, .. } = cmd {
+                    use crate::core::diffs::TileField;
+                    collector.push_diff(StateDiff::TileChanged {
+                        pos: TileCoord::new(*x, *y),
+                        field: TileField::Terrain(*terrain),
+                    });
+                }
+            }
+            CommandEffect::RoadLineApplied { count } if *count > 0 => {
+                if let Command::SetRoadLine { x0, y0, .. } = cmd {
+                    use crate::core::diffs::TileField;
+                    use crate::core_types::TerrainType;
+                    collector.push_diff(StateDiff::TileChanged {
+                        pos: TileCoord::new(*x0, *y0),
+                        field: TileField::Terrain(TerrainType::Grass), // road tile sentinel
+                    });
+                }
+            }
+            CommandEffect::TilesBulldozed { count } if *count > 0 => {
+                if let Command::Bulldoze { x, y, .. } = cmd {
+                    use crate::core::diffs::TileField;
+                    use crate::core_types::ZoneType;
+                    collector.push_diff(StateDiff::TileChanged {
+                        pos: TileCoord::new(*x, *y),
+                        field: TileField::Zone(ZoneType::None),
+                    });
+                }
+            }
+            CommandEffect::ZoningApplied { .. }
             | CommandEffect::TerrainApplied { .. }
             | CommandEffect::RoadLineApplied { .. }
+            | CommandEffect::TilesBulldozed { .. }
             | CommandEffect::RoadRemoved { .. }
             | CommandEffect::SimSpeedChanged { .. } => {}
         }
