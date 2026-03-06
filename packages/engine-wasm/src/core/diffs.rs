@@ -163,6 +163,18 @@ impl WorldDiff {
             metrics: collector.drain_metrics(),
         }
     }
+
+    /// Construct an empty `WorldDiff` for the given tick with no diffs or metrics.
+    ///
+    /// Used when a tick is skipped (e.g. when the simulation is paused) and a
+    /// valid `WorldDiff` value is still required by the caller.
+    pub fn empty(tick: Tick) -> Self {
+        Self {
+            tick,
+            diffs: Vec::new(),
+            metrics: Vec::new(),
+        }
+    }
 }
 
 // ─── Tests ─────────────────────────────────────────────────────────────────

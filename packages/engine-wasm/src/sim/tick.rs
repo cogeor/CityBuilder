@@ -19,6 +19,7 @@ use crate::caches::cache_manager::{CacheManager, InvalidationReason};
 use crate::sim::systems::effects::{propagate_effects, EffectMap};
 use crate::sim::phase_wheel::PhaseWheel;
 use crate::sim::plugin::{SimulationPlugin, SimWorld};
+use crate::sim::speed::SimSpeed;
 use crate::sim::plugins::{
     BuildingsPlugin, CityEventsPlugin, ConstructionPlugin,
     FinancePlugin, JobsPlugin, PopulationPlugin,
@@ -82,6 +83,10 @@ pub struct SimulationEngine {
     pub cache_manager: CacheManager,
     /// Ordered list of pluggable simulation systems.
     pub plugins: Vec<Box<dyn SimulationPlugin>>,
+    /// Current simulation speed. When `Paused` the tick body is skipped.
+    pub speed: SimSpeed,
+    /// Number of non-paused ticks executed since engine creation.
+    pub tick_counter: u64,
 }
 
 impl SimulationEngine {
@@ -127,6 +132,8 @@ impl SimulationEngine {
                 Box::new(FinancePlugin),
                 Box::new(CityEventsPlugin),
             ],
+            speed: SimSpeed::Normal,
+            tick_counter: 0,
         }
     }
 
@@ -135,11 +142,31 @@ impl SimulationEngine {
         self.pending_commands.push(cmd);
     }
 
+    /// Set the simulation speed. `SimSpeed::Paused` prevents tick body execution.
+    pub fn set_speed(&mut self, speed: SimSpeed) {
+        self.speed = speed;
+    }
+
     /// Advance the simulation by one tick.
     ///
     /// Runs all systems in order, drains events, and returns a `TickOutput`
     /// summarising what happened.
     pub fn tick(&mut self) -> TickOutput {
+        // Early-return when paused — world state must not change.
+        if self.speed == SimSpeed::Paused {
+            return TickOutput {
+                tick: self.world.tick,
+                events: Vec::new(),
+                population: self.population,
+                treasury: self.world.treasury,
+                power_shortage_kw: 0,
+                water_shortage_kl: 0,
+                world_diff: WorldDiff::empty(self.world.tick),
+            };
+        }
+        // Count every non-paused tick.
+        self.tick_counter += 1;
+
         // 1. Increment the world tick counter.
         self.world.tick += 1;
         let tick = self.world.tick;
@@ -971,6 +998,47 @@ mod tests {
                 output.water_shortage_kl
             );
         }
+    }
+
+    // ── Test: tick() does not advance world.tick when Paused ────────────
+
+    #[test]
+    fn paused_tick_does_not_advance_world_tick() {
+        let mut engine = make_engine(42);
+        engine.set_speed(crate::sim::speed::SimSpeed::Paused);
+
+        let output = engine.tick();
+
+        // world.tick must remain 0 — no simulation step was executed.
+        assert_eq!(engine.world.tick, 0);
+        // The returned tick in the output should also reflect the unchanged tick.
+        assert_eq!(output.tick, 0);
+        // No events should have been emitted.
+        assert!(output.events.is_empty());
+    }
+
+    // ── Test: tick_counter increments only on non-paused ticks ──────────
+
+    #[test]
+    fn tick_counter_increments_only_when_not_paused() {
+        let mut engine = make_engine(42);
+
+        // Run 3 normal ticks.
+        engine.tick();
+        engine.tick();
+        engine.tick();
+        assert_eq!(engine.tick_counter, 3);
+
+        // Pause and run 2 more ticks — counter must not change.
+        engine.set_speed(crate::sim::speed::SimSpeed::Paused);
+        engine.tick();
+        engine.tick();
+        assert_eq!(engine.tick_counter, 3);
+
+        // Resume and run 1 tick — counter advances by 1.
+        engine.set_speed(crate::sim::speed::SimSpeed::Normal);
+        engine.tick();
+        assert_eq!(engine.tick_counter, 4);
     }
 
     #[test]

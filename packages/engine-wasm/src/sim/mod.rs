@@ -5,6 +5,7 @@ pub mod plugin;
 pub mod plugins;
 pub mod scheduling;
 pub mod systems;
+pub mod speed;
 pub mod tick;
 
 #[cfg(test)]
@@ -42,6 +43,7 @@ mod determinism_guards {
                 "sim/systems/diurnal.rs",
                 include_str!("systems/diurnal.rs"),
             ),
+            ("sim/speed.rs", include_str!("speed.rs")),
             ("sim/tick.rs", include_str!("tick.rs")),
         ];
         for (path, src) in files {
