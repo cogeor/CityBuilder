@@ -4,6 +4,7 @@
 //! (value + 32768) to store signed i16 values in unsigned storage.
 //! Land value is a composite derived from desirability, pollution, crime, and noise.
 
+use crate::caches::cache_manager::DirtyTileSet;
 use crate::core::archetypes::{ArchetypeRegistry, EffectKind};
 use crate::core::entity::EntityStore;
 use crate::core_types::*;
@@ -66,9 +67,13 @@ impl AnalysisMap {
 
     /// Clear all values to zero.
     pub fn clear(&mut self) {
-        for v in self.data.iter_mut() {
-            *v = 0;
-        }
+        self.data.fill(0);
+    }
+
+    /// Fill all tiles with the given value.
+    #[inline]
+    pub fn fill(&mut self, value: u16) {
+        self.data.fill(value);
     }
 
     /// Map width in tiles.
@@ -172,10 +177,7 @@ impl AnalysisMaps {
     /// Create new zeroed analysis maps for the given dimensions.
     pub fn new(width: u16, height: u16) -> Self {
         let mut desirability = AnalysisMap::new(width, height);
-        // Initialize desirability to the offset (representing 0)
-        for i in 0..desirability.len() {
-            desirability.set_by_index(i, DESIRABILITY_OFFSET);
-        }
+        desirability.fill(DESIRABILITY_OFFSET);
 
         AnalysisMaps {
             pollution: AnalysisMap::new(width, height),
@@ -196,11 +198,7 @@ impl AnalysisMaps {
         self.pollution.clear();
         self.crime.clear();
         self.noise.clear();
-        // Reset desirability to offset baseline
-        self.desirability.clear();
-        for i in 0..self.desirability.len() {
-            self.desirability.set_by_index(i, DESIRABILITY_OFFSET);
-        }
+        self.desirability.fill(DESIRABILITY_OFFSET);
         self.land_value.clear();
 
         // Accumulate from entities
@@ -258,6 +256,90 @@ impl AnalysisMaps {
 
         // Compute land_value composite
         self.compute_land_value();
+    }
+
+    /// Rebuild only the tiles marked dirty in `dirty`.
+    ///
+    /// Clears each dirty tile to its baseline value, then iterates all active
+    /// entities and applies effect contributions only to dirty tiles.
+    /// Clean tiles are never read or written. When `dirty.any()` is false this
+    /// is a no-op. After rebuilding, the caller is responsible for clearing
+    /// the dirty set.
+    pub fn rebuild_dirty(
+        &mut self,
+        entities: &EntityStore,
+        registry: &ArchetypeRegistry,
+        dirty: &DirtyTileSet,
+    ) {
+        if !dirty.any() {
+            return;
+        }
+
+        let w = self.pollution.width() as usize;
+
+        // Step 1: reset dirty tiles to their baseline values.
+        for idx in dirty.iter_dirty_indices() {
+            self.pollution.set_by_index(idx, 0);
+            self.crime.set_by_index(idx, 0);
+            self.noise.set_by_index(idx, 0);
+            self.desirability.set_by_index(idx, DESIRABILITY_OFFSET);
+            self.land_value.set_by_index(idx, 0);
+        }
+
+        // Step 2: accumulate entity effects, writing only to dirty tiles.
+        for handle in entities.iter_alive() {
+            let flags = match entities.get_flags(handle) {
+                Some(f) => f,
+                None => continue,
+            };
+            if flags.contains(StatusFlags::UNDER_CONSTRUCTION) {
+                continue;
+            }
+            let pos = match entities.get_pos(handle) {
+                Some(p) => p,
+                None => continue,
+            };
+            let arch_id = match entities.get_archetype(handle) {
+                Some(a) => a,
+                None => continue,
+            };
+            let def = match registry.get(arch_id) {
+                Some(d) => d,
+                None => continue,
+            };
+
+            if def.pollution > 0 {
+                let radius = def.pollution.saturating_mul(2);
+                spread_value_dirty(
+                    &mut self.pollution, pos.x, pos.y, radius,
+                    def.pollution as u16, w, dirty,
+                );
+            }
+            if def.noise > 0 {
+                spread_value_dirty(
+                    &mut self.noise, pos.x, pos.y, def.noise,
+                    def.noise as u16, w, dirty,
+                );
+            }
+            if def.desirability_radius > 0 && def.desirability_magnitude != 0 {
+                spread_desirability_dirty(
+                    &mut self.desirability, pos.x, pos.y,
+                    def.desirability_radius, def.desirability_magnitude,
+                    w, dirty,
+                );
+            }
+        }
+
+        // Step 3: recompute land value for dirty tiles only.
+        for idx in dirty.iter_dirty_indices() {
+            let desirability_raw =
+                self.desirability.get_by_index(idx) as i32 - DESIRABILITY_OFFSET as i32;
+            let pollution = self.pollution.get_by_index(idx) as i32;
+            let crime = self.crime.get_by_index(idx) as i32;
+            let noise = self.noise.get_by_index(idx) as i32;
+            let lv = desirability_raw * 2 + 100 - pollution - crime - noise;
+            self.land_value.set_by_index(idx, lv.clamp(0, 65535) as u16);
+        }
     }
 
     /// Rebuild analysis maps for a partial scan window.
@@ -485,6 +567,62 @@ fn spread_desirability_partial(
                 let new_val = (current + magnitude as i32).clamp(0, u16::MAX as i32);
                 map.data[idx] = new_val as u16;
             }
+        }
+    }
+}
+
+/// Spread a `value` to tiles within manhattan distance `radius` of `(cx, cy)`,
+/// writing only to tiles that are set in `dirty`.
+fn spread_value_dirty(
+    map: &mut AnalysisMap,
+    cx: i16, cy: i16, radius: u8, value: u16,
+    map_width: usize, dirty: &DirtyTileSet,
+) {
+    let r = radius as i16;
+    let w = map.width() as i16;
+    let h = map.height() as i16;
+    for dy in -r..=r {
+        let rem = r - dy.abs();
+        for dx in -rem..=rem {
+            let tx = cx + dx;
+            let ty = cy + dy;
+            if tx < 0 || ty < 0 || tx >= w || ty >= h {
+                continue;
+            }
+            if !dirty.is_set(tx, ty) {
+                continue;
+            }
+            let idx = ty as usize * map_width + tx as usize;
+            map.data[idx] = map.data[idx].saturating_add(value);
+        }
+    }
+}
+
+/// Spread a signed desirability `magnitude` to dirty tiles within manhattan
+/// distance `radius` of `(cx, cy)` using the offset encoding.
+fn spread_desirability_dirty(
+    map: &mut AnalysisMap,
+    cx: i16, cy: i16, radius: u8, magnitude: i16,
+    map_width: usize, dirty: &DirtyTileSet,
+) {
+    let r = radius as i16;
+    let w = map.width() as i16;
+    let h = map.height() as i16;
+    for dy in -r..=r {
+        let rem = r - dy.abs();
+        for dx in -rem..=rem {
+            let tx = cx + dx;
+            let ty = cy + dy;
+            if tx < 0 || ty < 0 || tx >= w || ty >= h {
+                continue;
+            }
+            if !dirty.is_set(tx, ty) {
+                continue;
+            }
+            let idx = ty as usize * map_width + tx as usize;
+            let current = map.data[idx] as i32;
+            let new_val = (current + magnitude as i32).clamp(0, u16::MAX as i32);
+            map.data[idx] = new_val as u16;
         }
     }
 }
@@ -980,5 +1118,93 @@ mod tests {
             }
         }
         assert_eq!(count, 13);
+    }
+
+    // ── rebuild_dirty tests ───────────────────────────────────────────────────
+
+    #[test]
+    fn rebuild_dirty_noop_when_no_dirty_tiles() {
+        let entities = EntityStore::new(16);
+        let registry = ArchetypeRegistry::new();
+        let mut maps = AnalysisMaps::new(8, 8);
+        // Pre-fill pollution to a non-zero value to detect any writes.
+        maps.pollution.set(3, 3, 99);
+
+        let dirty = DirtyTileSet::new(8, 8); // all clean
+        maps.rebuild_dirty(&entities, &registry, &dirty);
+
+        // Nothing was written: pollution at (3,3) still 99.
+        assert_eq!(maps.pollution.get(3, 3), 99);
+    }
+
+    #[test]
+    fn rebuild_dirty_resets_dirty_tile_to_baseline() {
+        let entities = EntityStore::new(16);
+        let registry = ArchetypeRegistry::new();
+        let mut maps = AnalysisMaps::new(8, 8);
+        maps.pollution.set(2, 2, 77);
+
+        let mut dirty = DirtyTileSet::new(8, 8);
+        dirty.mark(2, 2);
+        maps.rebuild_dirty(&entities, &registry, &dirty);
+
+        // Dirty tile was reset to 0 (no entities contributing).
+        assert_eq!(maps.pollution.get(2, 2), 0);
+        // Land value baseline: 0*2+100-0-0-0 = 100.
+        assert_eq!(maps.land_value.get(2, 2), 100);
+    }
+
+    #[test]
+    fn rebuild_dirty_accumulates_entity_effect_on_dirty_tile() {
+        let mut entities = EntityStore::new(16);
+        let mut registry = ArchetypeRegistry::new();
+        registry.register(make_factory()); // pollution=4, radius=8
+
+        let h = entities.alloc(10, 4, 4, 0).unwrap();
+        entities.set_flags(h, StatusFlags::POWERED);
+
+        let mut maps = AnalysisMaps::new(16, 16);
+
+        // Only mark tile (4,4) dirty.
+        let mut dirty = DirtyTileSet::new(16, 16);
+        dirty.mark(4, 4);
+        maps.rebuild_dirty(&entities, &registry, &dirty);
+
+        // Dirty tile should have pollution contribution.
+        assert_eq!(maps.pollution.get(4, 4), 4);
+        // Clean tile (0,0) far away: not touched.
+        assert_eq!(maps.pollution.get(0, 0), 0);
+    }
+
+    #[test]
+    fn rebuild_dirty_does_not_write_to_clean_tiles() {
+        let mut entities = EntityStore::new(16);
+        let mut registry = ArchetypeRegistry::new();
+        registry.register(make_factory()); // pollution=4, radius=8
+
+        let h = entities.alloc(10, 4, 4, 0).unwrap();
+        entities.set_flags(h, StatusFlags::POWERED);
+
+        let mut maps = AnalysisMaps::new(16, 16);
+        // Pre-set a clean tile to a sentinel value.
+        maps.pollution.set(0, 0, 55);
+
+        let mut dirty = DirtyTileSet::new(16, 16);
+        dirty.mark(4, 4); // only mark center
+        maps.rebuild_dirty(&entities, &registry, &dirty);
+
+        // Clean tile should not have been modified.
+        assert_eq!(maps.pollution.get(0, 0), 55);
+    }
+
+    #[test]
+    fn analysis_map_fill_sets_all_tiles() {
+        let mut map = AnalysisMap::new(4, 4);
+        map.fill(42);
+        for y in 0..4i16 {
+            for x in 0..4i16 {
+                assert_eq!(map.get(x, y), 42);
+            }
+        }
     }
 }
