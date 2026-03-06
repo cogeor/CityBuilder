@@ -4,6 +4,7 @@
 //! and a `DefaultMapGenerator` implementation using simplex-like hash noise.
 //! All generation is seeded and deterministic: same seed + params = identical map.
 
+use crate::core::tilemap::TileMap;
 use crate::core_types::TerrainType;
 
 // ---- Map Generation Parameters ------------------------------------------------
@@ -516,6 +517,25 @@ impl IMapGenerator for DefaultMapGenerator {
     }
 }
 
+// ---- TileMap Conversion ------------------------------------------------------
+
+/// Build a [`TileMap`] from the output of a map generator.
+///
+/// Each tile's `terrain` field is populated via the existing
+/// `From<GenTerrain> for TerrainType` conversion. All other `TileValue`
+/// fields (kind, zone, flags) are left at their defaults.
+pub fn tile_map_from_generated(map: &GeneratedMap) -> TileMap {
+    let mut tilemap = TileMap::new(map.width as u32, map.height as u32);
+    for (i, gen_tile) in map.tiles.iter().enumerate() {
+        let terrain = TerrainType::from(gen_tile.terrain);
+        // tile_index is row-major: i == y * width + x
+        let x = (i % map.width as usize) as u32;
+        let y = (i / map.width as usize) as u32;
+        tilemap.set_terrain(x, y, terrain);
+    }
+    tilemap
+}
+
 // ---- Tests -------------------------------------------------------------------
 
 #[cfg(test)]
@@ -864,5 +884,77 @@ mod tests {
         assert_eq!(TerrainType::from(GenTerrain::Forest),   TerrainType::Forest);
         assert_eq!(TerrainType::from(GenTerrain::Hill),     TerrainType::Rock);
         assert_eq!(TerrainType::from(GenTerrain::Mountain), TerrainType::Rock);
+    }
+
+    // 22. tile_map_from_generated: dimensions match GeneratedMap.
+    #[test]
+    fn tile_map_from_generated_dimensions() {
+        use crate::core::mapgen::tile_map_from_generated;
+        let map = gen_default(1, 32, 24);
+        let tilemap = tile_map_from_generated(&map);
+        assert_eq!(tilemap.width(), 32);
+        assert_eq!(tilemap.height(), 24);
+        assert_eq!(tilemap.len(), 32 * 24);
+    }
+
+    // 23. tile_map_from_generated: water GenTerrain becomes TerrainType::Water.
+    #[test]
+    fn tile_map_from_generated_water_terrain() {
+        use crate::core::mapgen::tile_map_from_generated;
+        use crate::core_types::TerrainType;
+        // Use a high water_ratio to guarantee water tiles.
+        let gen = DefaultMapGenerator;
+        let params = MapGenParams {
+            water_ratio: 0.8,
+            hilliness: 0.5,
+            river_count: 0,
+            coast_smoothing: 0,
+        };
+        let map = gen.generate(1, 32, 32, &params);
+        let tilemap = tile_map_from_generated(&map);
+
+        // Every GeneratedTile that maps to Water should match.
+        for (i, gen_tile) in map.tiles.iter().enumerate() {
+            let x = (i % map.width as usize) as u32;
+            let y = (i / map.width as usize) as u32;
+            let expected = TerrainType::from(gen_tile.terrain);
+            let actual = tilemap.get(x, y).unwrap().terrain;
+            assert_eq!(actual, expected, "mismatch at ({}, {})", x, y);
+        }
+    }
+
+    // 24. tile_map_from_generated: non-water tiles preserve correct terrain.
+    #[test]
+    fn tile_map_from_generated_land_terrain() {
+        use crate::core::mapgen::tile_map_from_generated;
+        use crate::core_types::TerrainType;
+        let params = MapGenParams {
+            water_ratio: 0.0,
+            hilliness: 0.0,
+            river_count: 0,
+            coast_smoothing: 0,
+        };
+        let gen = DefaultMapGenerator;
+        let map = gen.generate(7, 16, 16, &params);
+        let tilemap = tile_map_from_generated(&map);
+        // With water_ratio=0 all tiles should be land; none should be Water.
+        for (_, _, tile) in tilemap.iter() {
+            assert_ne!(tile.terrain, TerrainType::Water);
+        }
+    }
+
+    // 25. tile_map_from_generated: kind and zone remain at defaults.
+    #[test]
+    fn tile_map_from_generated_overlay_defaults() {
+        use crate::core::mapgen::tile_map_from_generated;
+        use crate::core::tilemap::{TileKind, TileFlags};
+        use crate::core_types::ZoneType;
+        let map = gen_default(99, 16, 16);
+        let tilemap = tile_map_from_generated(&map);
+        for (_, _, tile) in tilemap.iter() {
+            assert_eq!(tile.kind, TileKind::Empty);
+            assert_eq!(tile.zone, ZoneType::None);
+            assert!(tile.flags.is_empty());
+        }
     }
 }

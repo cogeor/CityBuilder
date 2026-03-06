@@ -14,6 +14,7 @@ use wasm_bindgen::prelude::*;
 use crate::core::archetypes::ArchetypeRegistry;
 use crate::core::buildings::register_base_city_builder_archetypes;
 use crate::core::commands::Command;
+use crate::core::mapgen::{DefaultMapGenerator, IMapGenerator, MapGenParams, tile_map_from_generated};
 use crate::core::network::RoadGraph;
 use crate::core::world::WorldState;
 use crate::core_types::*;
@@ -43,7 +44,14 @@ impl GameHandle {
     /// `RoadGraph`, and wires them into a `SimulationEngine`.
     #[cfg_attr(target_arch = "wasm32", wasm_bindgen(constructor))]
     pub fn new(seed: u64, map_width: u16, map_height: u16) -> GameHandle {
-        let world = WorldState::new(MapSize::new(map_width, map_height), seed);
+        // Generate terrain from the seed before constructing world state.
+        let gen = DefaultMapGenerator;
+        let generated = gen.generate(seed, map_width, map_height, &MapGenParams::default());
+        let tile_map = tile_map_from_generated(&generated);
+
+        let mut world = WorldState::new(MapSize::new(map_width, map_height), seed);
+        world.tiles = tile_map;
+
         let mut registry = ArchetypeRegistry::new();
         register_base_city_builder_archetypes(&mut registry);
         let road_graph = RoadGraph::new();
@@ -231,9 +239,14 @@ mod tests {
     #[test]
     fn apply_command_json_valid() {
         let mut handle = GameHandle::new(42, 32, 32);
+        // Find the first buildable tile in the generated world.
+        let (bx, by) = handle.engine.as_ref().unwrap().world.tiles.iter()
+            .find(|&(x, y, _)| handle.engine.as_ref().unwrap().world.is_buildable(x as i16, y as i16))
+            .map(|(x, y, _)| (x, y))
+            .expect("expected at least one buildable tile in a 32x32 map with water_ratio=0.3");
         let cmd_json = format!(
-            r#"{{"PlaceEntity":{{"archetype_id":{},"x":5,"y":5,"rotation":0}}}}"#,
-            ARCH_UTIL_POWER_PLANT
+            r#"{{"PlaceEntity":{{"archetype_id":{},"x":{},"y":{},"rotation":0}}}}"#,
+            ARCH_UTIL_POWER_PLANT, bx, by
         );
         let result = handle.apply_command_json(&cmd_json);
         assert!(result.contains("ok"), "Expected ok, got: {}", result);
