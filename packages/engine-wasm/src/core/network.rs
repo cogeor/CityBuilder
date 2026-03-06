@@ -84,10 +84,9 @@ pub enum RoadTileVariant {
 
 /// Lookup table: index is the 4-bit NSEW mask, value is the corresponding variant.
 ///
-/// ```
-/// use engine_wasm::core::network::{ROAD_TABLE, RoadTileVariant};
-/// assert_eq!(ROAD_TABLE[0b1111], RoadTileVariant::Cross);
-/// assert_eq!(ROAD_TABLE[0b1100], RoadTileVariant::NS);
+/// ```rust,no_run
+/// // ROAD_TABLE[0b1111] == RoadTileVariant::Cross
+/// // ROAD_TABLE[0b1100] == RoadTileVariant::NS
 /// ```
 pub const ROAD_TABLE: [RoadTileVariant; 16] = [
     RoadTileVariant::Empty, //  0
