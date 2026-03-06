@@ -3,7 +3,7 @@
 //! This module owns the engine-side baseline archetypes and category rules
 //! required for a functional city-builder loop.
 
-use crate::core::archetypes::{ArchetypeDefinition, ArchetypeRegistry, ArchetypeTag};
+use crate::core::archetypes::{ArchetypeDefinition, ArchetypeRegistry, ArchetypeTag, Effect, EffectKind};
 use crate::core_types::ZoneType;
 
 pub const ARCH_RES_SMALL_HOUSE: u16 = 100;
@@ -225,7 +225,9 @@ fn base_city_builder_archetypes() -> Vec<ArchetypeDefinition> {
             prerequisites: vec![],
             workspace_per_job_m2: 15,
             living_space_per_person_m2: 0,
-            effects: vec![],
+            effects: vec![
+                Effect { kind: EffectKind::LandValue, value: 10, radius: 5 },
+            ],
         },
         ArchetypeDefinition {
             id: ARCH_COM_CORNER_SHOP,
@@ -312,7 +314,10 @@ fn base_city_builder_archetypes() -> Vec<ArchetypeDefinition> {
             prerequisites: vec![],
             workspace_per_job_m2: 30,
             living_space_per_person_m2: 0,
-            effects: vec![],
+            effects: vec![
+                Effect { kind: EffectKind::Pollution, value: 50, radius: 5 },
+                Effect { kind: EffectKind::Crime, value: 20, radius: 3 },
+            ],
         },
         ArchetypeDefinition {
             id: ARCH_UTIL_WATER_PUMP,
