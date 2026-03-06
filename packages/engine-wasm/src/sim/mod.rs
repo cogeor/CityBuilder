@@ -3,6 +3,7 @@
 pub mod phase_wheel;
 pub mod plugin;
 pub mod plugins;
+pub mod scheduler;
 pub mod scheduling;
 pub mod systems;
 pub mod speed;
