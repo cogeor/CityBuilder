@@ -8,6 +8,10 @@ use crate::core_types::ZoneType;
 
 pub const ARCH_RES_SMALL_HOUSE: u16 = 100;
 pub const ARCH_UTIL_POWER_PLANT: u16 = 200;
+pub const ARCH_UTIL_COAL_PLANT: u16 = 201;
+pub const ARCH_UTIL_WIND_TURBINE: u16 = 202;
+/// Power line: sets TileFlags::CONDUCTOR on placed tiles (handled in Loop 04).
+pub const ARCH_INFRA_POWER_LINE: u16 = 203;
 pub const ARCH_CIV_HOSPITAL: u16 = 300;
 pub const ARCH_COM_CORNER_SHOP: u16 = 400;
 pub const ARCH_CIV_SCHOOL: u16 = 500;
@@ -98,6 +102,84 @@ fn base_city_builder_archetypes() -> Vec<ArchetypeDefinition> {
             max_level: 3,
             prerequisites: vec![],
             workspace_per_job_m2: 25,
+            living_space_per_person_m2: 0,
+        },
+        ArchetypeDefinition {
+            id: ARCH_UTIL_COAL_PLANT,
+            name: "coal_plant".to_string(),
+            tags: vec![ArchetypeTag::Utility],
+            footprint_w: 3,
+            footprint_h: 3,
+            coverage_ratio_pct: 70,
+            floors: 2,
+            usable_ratio_pct: 90,
+            base_cost_cents: 500_000,
+            base_upkeep_cents_per_tick: 20,
+            power_demand_kw: 0,
+            power_supply_kw: 700,
+            water_demand: 15,
+            water_supply: 0,
+            service_radius: 0,
+            desirability_radius: 8,
+            desirability_magnitude: -5,
+            pollution: 35,
+            noise: 25,
+            build_time_ticks: 600,
+            max_level: 3,
+            prerequisites: vec![],
+            workspace_per_job_m2: 25,
+            living_space_per_person_m2: 0,
+        },
+        ArchetypeDefinition {
+            id: ARCH_UTIL_WIND_TURBINE,
+            name: "wind_turbine".to_string(),
+            tags: vec![ArchetypeTag::Utility],
+            footprint_w: 1,
+            footprint_h: 1,
+            coverage_ratio_pct: 10,
+            floors: 1,
+            usable_ratio_pct: 100,
+            base_cost_cents: 100_000,
+            base_upkeep_cents_per_tick: 3,
+            power_demand_kw: 0,
+            power_supply_kw: 200,
+            water_demand: 0,
+            water_supply: 0,
+            service_radius: 0,
+            desirability_radius: 4,
+            desirability_magnitude: -1,
+            pollution: 0,
+            noise: 5,
+            build_time_ticks: 200,
+            max_level: 3,
+            prerequisites: vec![],
+            workspace_per_job_m2: 0,
+            living_space_per_person_m2: 0,
+        },
+        ArchetypeDefinition {
+            id: ARCH_INFRA_POWER_LINE,
+            name: "power_line".to_string(),
+            tags: vec![ArchetypeTag::Transport],
+            footprint_w: 1,
+            footprint_h: 1,
+            coverage_ratio_pct: 0,
+            floors: 1,
+            usable_ratio_pct: 100,
+            base_cost_cents: 10_000,
+            base_upkeep_cents_per_tick: 0,
+            power_demand_kw: 0,
+            power_supply_kw: 0,
+            water_demand: 0,
+            water_supply: 0,
+            service_radius: 0,
+            desirability_radius: 0,
+            desirability_magnitude: 0,
+            pollution: 0,
+            noise: 0,
+            build_time_ticks: 10,
+            max_level: 1,
+            prerequisites: vec![],
+            workspace_per_job_m2: 0,
             living_space_per_person_m2: 0,
         },
         ArchetypeDefinition {
@@ -215,9 +297,12 @@ mod tests {
     fn register_base_archetypes_populates_registry() {
         let mut registry = ArchetypeRegistry::new();
         register_base_city_builder_archetypes(&mut registry);
-        assert!(registry.count() >= 6);
+        assert!(registry.count() >= 9);
         assert!(registry.get(ARCH_RES_SMALL_HOUSE).is_some());
         assert!(registry.get(ARCH_IND_LIGHT_FACTORY).is_some());
+        assert!(registry.get(ARCH_UTIL_COAL_PLANT).is_some());
+        assert!(registry.get(ARCH_UTIL_WIND_TURBINE).is_some());
+        assert!(registry.get(ARCH_INFRA_POWER_LINE).is_some());
     }
 
     #[test]

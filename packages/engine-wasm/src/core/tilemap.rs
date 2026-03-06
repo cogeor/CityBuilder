@@ -49,7 +49,7 @@ impl Default for TileKind {
 bitflags! {
     /// Per-tile service and state flags packed into one byte.
     ///
-    /// Bits 6-7 are reserved for future use.
+    /// Bit 7 is reserved for future use.
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
     pub struct TileFlags: u8 {
         const POWERED            = 1 << 0; // 0x01
@@ -58,7 +58,8 @@ bitflags! {
         const UNDER_CONSTRUCTION = 1 << 3; // 0x08
         const BULLDOZABLE        = 1 << 4; // 0x10
         const ON_FIRE            = 1 << 5; // 0x20
-        // bits 6-7 reserved
+        const CONDUCTOR          = 1 << 6; // 0x40 — tile can carry electrical current
+        // bit 7 reserved
     }
 }
 
@@ -480,15 +481,21 @@ mod tests {
     }
 
     #[test]
+    fn tile_flags_conductor_bit_value() {
+        assert_eq!(TileFlags::CONDUCTOR.bits(), 0x40);
+    }
+
+    #[test]
     fn tile_flags_constants_no_overlap() {
         let all = TileFlags::POWERED
             | TileFlags::WATERED
             | TileFlags::ROAD_ACCESS
             | TileFlags::UNDER_CONSTRUCTION
             | TileFlags::BULLDOZABLE
-            | TileFlags::ON_FIRE;
+            | TileFlags::ON_FIRE
+            | TileFlags::CONDUCTOR;
         // Each constant must occupy a unique bit.
-        assert_eq!(all.bits().count_ones(), 6);
+        assert_eq!(all.bits().count_ones(), 7);
     }
 
     // ── TileMap construction ─────────────────────────────────────────────────
