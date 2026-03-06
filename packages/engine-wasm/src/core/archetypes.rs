@@ -171,9 +171,14 @@ impl ArchetypeRegistry {
         self.archetypes.get(&id)
     }
 
-    /// List all archetype IDs.
+    /// List all archetype IDs in ascending sorted order.
+    ///
+    /// Sorted output ensures that `tick_zoned_development` archetype selection
+    /// is deterministic for a given seed, regardless of HashMap iteration order.
     pub fn list_ids(&self) -> Vec<ArchetypeId> {
-        self.archetypes.keys().copied().collect()
+        let mut ids: Vec<ArchetypeId> = self.archetypes.keys().copied().collect();
+        ids.sort();
+        ids
     }
 
     /// List archetypes that have a specific tag.

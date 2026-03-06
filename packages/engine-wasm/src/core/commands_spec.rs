@@ -4,10 +4,11 @@
 //! condition against the world state. Specs compose via `CompositeSpec`
 //! to form complete validation pipelines per command type.
 
-use crate::core::archetypes::ArchetypeRegistry;
+use crate::core::archetypes::{ArchetypeRegistry, Prerequisite};
 use crate::core::buildings::zone_for_archetype;
 use crate::core::commands::{Command, CommandError};
 use crate::core::math_util::rects_overlap;
+use crate::core::tilemap::TileFlags;
 use crate::core::world::WorldState;
 use crate::core_types::*;
 
@@ -274,6 +275,9 @@ pub fn validate_command_with_registry(
                 }
             }
 
+            // Utility, Service, and Transport archetypes return None from zone_for_archetype
+            // and intentionally skip zone validation — they can be placed in any zone or
+            // on unzoned land, matching SimCity civic building rules.
             if let Some(zone) = zone_for_archetype(def) {
                 for dy in 0..def.footprint_h as i16 {
                     for dx in 0..def.footprint_w as i16 {
@@ -286,6 +290,35 @@ pub fn validate_command_with_registry(
                         if tile.zone != zone {
                             return Err(CommandError::WrongZone);
                         }
+                    }
+                }
+            }
+
+            // Enforce archetype prerequisites.
+            for prereq in &def.prerequisites {
+                match prereq {
+                    Prerequisite::RoadAccess => {
+                        // Road access: any footprint tile must have TileFlags::ROAD_ACCESS
+                        // (set by the road system when a road is adjacent to the tile).
+                        let mut has_access = false;
+                        'road_check: for dy in 0..def.footprint_h as i16 {
+                            for dx in 0..def.footprint_w as i16 {
+                                let tx = *x + dx;
+                                let ty = *y + dy;
+                                if let Some(tile) = world.tiles.get(tx as u32, ty as u32) {
+                                    if tile.flags.contains(TileFlags::ROAD_ACCESS) {
+                                        has_access = true;
+                                        break 'road_check;
+                                    }
+                                }
+                            }
+                        }
+                        if !has_access {
+                            return Err(CommandError::NoRoadAccess);
+                        }
+                    }
+                    Prerequisite::PowerConnection | Prerequisite::WaterConnection => {
+                        // Stub: checked by utility systems after placement, not at validation time.
                     }
                 }
             }

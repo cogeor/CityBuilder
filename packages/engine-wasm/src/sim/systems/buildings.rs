@@ -296,6 +296,10 @@ pub fn tick_zoned_development_with_config(
             continue;
         }
 
+        // NOTE: treasury deduction here is the single authoritative path for auto-development.
+        // The apply_command_with_registry path (PlaceEntity command) also deducts cost, but
+        // the two code paths never trigger for the same entity — auto-development calls
+        // place_entity directly, bypassing the command pipeline. No double-deduction risk.
         if let Some(_handle) = world.place_entity(archetype_id, x, y, 0) {
             world.treasury -= def.cost_at_level(1);
             mark_occupied(&mut occupied, map_size.width, x, y, def.footprint_w, def.footprint_h);
