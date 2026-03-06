@@ -295,6 +295,11 @@ describe('ToolManager', () => {
     expect(tm.getSelectedRoadType()).toBe(5);
   });
 
+  it('setTool with terrainType sets value', () => {
+    tm.setTool(ToolType.Terrain, undefined, undefined, undefined, 4);
+    expect(tm.getSelectedTerrainType()).toBe(4);
+  });
+
   it('onMouseDown with Select tool does nothing', () => {
     const handler = vi.fn();
     tm.addEventListener(handler);
@@ -346,7 +351,7 @@ describe('ToolManager', () => {
     expect(ToolState.Idle).toBe('idle');
     expect(ToolState.Previewing).toBe('previewing');
     expect(ToolState.Dragging).toBe('dragging');
-    expect(ToolState.Confirming).toBe('confirming');
+    // ToolState.Confirming was removed — it was declared but never entered by any code path.
   });
 
   it('PlacementValidity enum has correct values', () => {
@@ -355,5 +360,110 @@ describe('ToolManager', () => {
     expect(PlacementValidity.Occupied).toBe('occupied');
     expect(PlacementValidity.InsufficientFunds).toBe('insufficient_funds');
     expect(PlacementValidity.OutOfBounds).toBe('out_of_bounds');
+  });
+
+  // --- onMouseLeave ---
+
+  it('onMouseLeave resets hoverTile and transitions Previewing to Idle', () => {
+    const handler = vi.fn();
+    tm.setTool(ToolType.Place);
+    tm.onHover(3, 3);
+    expect(tm.getState()).toBe(ToolState.Previewing);
+    expect(tm.getHoverTile()).toEqual({ x: 3, y: 3 });
+
+    tm.addEventListener(handler);
+    tm.onMouseLeave();
+
+    expect(tm.getState()).toBe(ToolState.Idle);
+    expect(tm.getHoverTile()).toBeNull();
+    expect(tm.getPreviewTiles()).toEqual([]);
+
+    const stateCall = handler.mock.calls.find((c: any[]) => c[0] === 'stateChanged');
+    expect(stateCall).toBeDefined();
+    expect(stateCall![1].state).toBe(ToolState.Idle);
+  });
+
+  it('onMouseLeave from Idle does not emit stateChanged', () => {
+    const handler = vi.fn();
+    tm.addEventListener(handler);
+    tm.setTool(ToolType.Zone);
+    handler.mockClear(); // discard the setTool cancelAction event
+    tm.onMouseLeave();
+    // No stateChanged emitted because we were already Idle
+    const stateCall = handler.mock.calls.find((c: any[]) => c[0] === 'stateChanged');
+    expect(stateCall).toBeUndefined();
+  });
+
+  it('onMouseLeave from Dragging does not cancel drag', () => {
+    tm.setTool(ToolType.Zone);
+    tm.onMouseDown(2, 2);
+    expect(tm.getState()).toBe(ToolState.Dragging);
+
+    tm.onMouseLeave();
+    // Dragging is preserved — cursor may re-enter the canvas
+    expect(tm.getState()).toBe(ToolState.Dragging);
+    expect(tm.getHoverTile()).toBeNull();
+  });
+
+  // --- onMouseDown return value ---
+
+  it('onMouseDown returns ToolCommand for Place tool', () => {
+    tm.setTool(ToolType.Place, 7);
+    const cmd = tm.onMouseDown(4, 4);
+    expect(cmd).not.toBeNull();
+    expect(cmd!.type).toBe('place');
+    expect(cmd!.archetypeId).toBe(7);
+    expect(cmd!.tiles).toEqual([{ x: 4, y: 4 }]);
+  });
+
+  it('onMouseDown returns null for drag tools (Zone, Bulldoze, Road)', () => {
+    tm.setTool(ToolType.Zone);
+    expect(tm.onMouseDown(1, 1)).toBeNull();
+
+    tm.setTool(ToolType.Bulldoze);
+    expect(tm.onMouseDown(1, 1)).toBeNull();
+
+    tm.setTool(ToolType.Road);
+    expect(tm.onMouseDown(1, 1)).toBeNull();
+  });
+
+  it('onMouseDown returns null for Select tool', () => {
+    expect(tm.onMouseDown(5, 5)).toBeNull();
+  });
+
+  // --- updatePreview calls validateFn for all tool types ---
+
+  it('updatePreview calls validateFn for Zone tool', () => {
+    const validate = vi.fn().mockReturnValue(PlacementValidity.InvalidTerrain);
+    tm.setValidateCallback(validate);
+    tm.setTool(ToolType.Zone, undefined, 1);
+    tm.onHover(2, 3);
+    expect(validate).toHaveBeenCalledWith(2, 3, undefined);
+    expect(tm.getPreviewValidity()).toBe(PlacementValidity.InvalidTerrain);
+  });
+
+  it('updatePreview calls validateFn for Bulldoze tool', () => {
+    const validate = vi.fn().mockReturnValue(PlacementValidity.OutOfBounds);
+    tm.setValidateCallback(validate);
+    tm.setTool(ToolType.Bulldoze);
+    tm.onHover(5, 5);
+    expect(validate).toHaveBeenCalledWith(5, 5, undefined);
+    expect(tm.getPreviewValidity()).toBe(PlacementValidity.OutOfBounds);
+  });
+
+  it('updatePreview calls validateFn for Road tool', () => {
+    const validate = vi.fn().mockReturnValue(PlacementValidity.Valid);
+    tm.setValidateCallback(validate);
+    tm.setTool(ToolType.Road);
+    tm.onHover(0, 0);
+    expect(validate).toHaveBeenCalledWith(0, 0, undefined);
+  });
+
+  it('updatePreview passes archetypeId only for Place tool', () => {
+    const validate = vi.fn().mockReturnValue(PlacementValidity.Valid);
+    tm.setValidateCallback(validate);
+    tm.setTool(ToolType.Place, 99);
+    tm.onHover(1, 2);
+    expect(validate).toHaveBeenCalledWith(1, 2, 99);
   });
 });

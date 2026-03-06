@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { mapZoneTypeFromCode, translateToolInteraction } from "./interaction_bridge.js";
+import {
+  mapZoneTypeFromCode,
+  translateToolInteraction,
+  ZONE_TYPE_IDS,
+} from "./interaction_bridge.js";
 
 describe("interaction_bridge", () => {
   it("translates road tool into SetRoadLine", () => {
@@ -183,5 +187,66 @@ describe("interaction_bridge", () => {
         },
       },
     ]);
+  });
+
+  // ── ZONE_TYPE_IDS constant ────────────────────────────────────────────────
+
+  it("ZONE_TYPE_IDS provides canonical zone code constants", () => {
+    expect(ZONE_TYPE_IDS.None).toBe(0);
+    expect(ZONE_TYPE_IDS.Residential).toBe(1);
+    expect(ZONE_TYPE_IDS.Commercial).toBe(2);
+    expect(ZONE_TYPE_IDS.Industrial).toBe(3);
+    expect(ZONE_TYPE_IDS.Civic).toBe(4);
+  });
+
+  it("ZONE_TYPE_IDS codes map to correct ZoneTypeName via mapZoneTypeFromCode", () => {
+    expect(mapZoneTypeFromCode(ZONE_TYPE_IDS.Residential)).toBe("Residential");
+    expect(mapZoneTypeFromCode(ZONE_TYPE_IDS.Commercial)).toBe("Commercial");
+    expect(mapZoneTypeFromCode(ZONE_TYPE_IDS.Industrial)).toBe("Industrial");
+    expect(mapZoneTypeFromCode(ZONE_TYPE_IDS.Civic)).toBe("Civic");
+    expect(mapZoneTypeFromCode(ZONE_TYPE_IDS.None)).toBe("None");
+  });
+
+  // ── boundsFromTiles edge cases (tested indirectly via translateToolInteraction) ──
+
+  it("empty tiles array returns no commands for zone", () => {
+    const commands = translateToolInteraction({ type: "zone", tiles: [] });
+    expect(commands).toEqual([]);
+  });
+
+  it("single-tile zone produces w=1 h=1 bounds", () => {
+    const commands = translateToolInteraction({
+      type: "zone",
+      tiles: [{ x: 7, y: 9 }],
+      zoneType: ZONE_TYPE_IDS.Civic,
+    });
+    expect(commands).toEqual([{ SetZoning: { x: 7, y: 9, w: 1, h: 1, zone: "Civic" } }]);
+  });
+
+  it("non-contiguous tiles use bounding-box for zone", () => {
+    // Tiles at corners of a 5x5 area — bounding box is (0,0) to (4,4) → w=5, h=5
+    const commands = translateToolInteraction({
+      type: "zone",
+      tiles: [
+        { x: 0, y: 0 },
+        { x: 4, y: 4 },
+        { x: 0, y: 4 },
+        { x: 4, y: 0 },
+      ],
+      zoneType: ZONE_TYPE_IDS.Industrial,
+    });
+    expect(commands).toEqual([
+      { SetZoning: { x: 0, y: 0, w: 5, h: 5, zone: "Industrial" } },
+    ]);
+  });
+
+  it("empty tiles array returns no commands for bulldoze", () => {
+    const commands = translateToolInteraction({ type: "bulldoze", tiles: [] });
+    expect(commands).toEqual([]);
+  });
+
+  it("empty tiles array returns no commands for road", () => {
+    const commands = translateToolInteraction({ type: "road", tiles: [] });
+    expect(commands).toEqual([]);
   });
 });

@@ -6,6 +6,7 @@ import {
   type RuntimeConfig,
 } from "../runtime_facade.js";
 import type { EngineCommand } from "../engine/commands.js";
+import { translateToolInteraction } from "../engine/interaction_bridge.js";
 
 // ---- Helpers ----
 
@@ -264,5 +265,113 @@ describe("RuntimeFacade", () => {
   it("getSaveManager returns a SaveManager instance", () => {
     const sm = facade.getSaveManager();
     expect(sm).toBeDefined();
+  });
+
+  // ---- Test 23: getPluginHost exposes orchestration layer ----
+  it("getPluginHost returns host bound to facade registry", () => {
+    const host = facade.getPluginHost();
+    expect(host).toBeDefined();
+    expect(host.getRegistry()).toBe(facade.getPluginRegistry());
+  });
+
+  // ---- Test 24a: failed worker delivery removes command from history ----
+  it("failed worker delivery removes command from history", async () => {
+    let rejectFn: (err: Error) => void;
+    const worker: any = {
+      startSim: vi.fn(async () => {}),
+      startRenderer: vi.fn(async () => {}),
+      sendCommand: vi.fn(() => new Promise<void>((_resolve, reject) => {
+        rejectFn = reject;
+      })),
+      setSpeed: vi.fn(),
+      pause: vi.fn(),
+      resume: vi.fn(),
+      saveGame: vi.fn(async () => new Uint8Array(0)),
+      loadGame: vi.fn(async () => true),
+      onTick: vi.fn(),
+      onPick: vi.fn(),
+      shutdown: vi.fn(),
+    };
+
+    facade.setWorkerManager(worker);
+    await facade.start();
+    facade.sendCommand(makeCommand("place"));
+
+    // History now has 1 record
+    expect(facade.getCommandHistory().getUndoCount()).toBe(1);
+
+    // Simulate delivery failure
+    rejectFn!(new Error("worker disconnected"));
+
+    // Allow the microtask queue to flush the .catch() handler
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // History should now be empty — the failed record was rolled back
+    expect(facade.getCommandHistory().getUndoCount()).toBe(0);
+  });
+
+  // ---- Test 24b: e2e — ToolManager.onMouseUp -> translateToolInteraction -> sendCommand ----
+  it("e2e: tool drag -> translateToolInteraction -> sendCommand records in history", async () => {
+    await facade.start();
+
+    // Simulate a zone drag: tiles from (1,1) to (3,3)
+    const toolCommand = {
+      type: "zone" as const,
+      tiles: [{ x: 1, y: 1 }, { x: 3, y: 3 }],
+      zoneType: 1, // Residential
+      estimatedCost: 0,
+    };
+
+    const engineCommands = translateToolInteraction(toolCommand);
+    expect(engineCommands.length).toBe(1);
+    expect(engineCommands[0]).toMatchObject({ SetZoning: { zone: "Residential" } });
+
+    for (const cmd of engineCommands) {
+      facade.sendCommand(cmd as EngineCommand);
+    }
+
+    const history = facade.getCommandHistory();
+    expect(history.getUndoCount()).toBe(1);
+    expect(history.canUndo()).toBe(true);
+
+    const undone = facade.undo();
+    expect(undone).not.toBeNull();
+    expect(undone!.type).toBe("SetZoning");
+    // Undo payload clears the zone
+    expect((undone!.undoPayload as EngineCommand)).toMatchObject({ SetZoning: { zone: "None" } });
+  });
+
+  // ---- Test 24: undo/redo dispatch worker commands when payloads exist ----
+  it("undo/redo dispatches to worker manager for reversible commands", async () => {
+    const sent: string[] = [];
+    const worker: any = {
+      startSim: vi.fn(async () => {}),
+      startRenderer: vi.fn(async () => {}),
+      sendCommand: vi.fn(async (json: string) => {
+        sent.push(json);
+        return { type: "COMMAND_RESULT", success: true, sequence_id: 1 };
+      }),
+      setSpeed: vi.fn(),
+      pause: vi.fn(),
+      resume: vi.fn(),
+      saveGame: vi.fn(async () => new Uint8Array(0)),
+      loadGame: vi.fn(async () => true),
+      onTick: vi.fn(),
+      onPick: vi.fn(),
+      shutdown: vi.fn(),
+    };
+
+    facade.setWorkerManager(worker);
+    await facade.start();
+    facade.sendCommand(makeCommand("zone"));
+    facade.undo();
+    facade.redo();
+
+    expect(sent.length).toBeGreaterThanOrEqual(3);
+    expect(sent[1]).toContain('"SetZoning"');
+    expect(sent[1]).toContain('"zone":"None"');
+    expect(sent[2]).toContain('"SetZoning"');
+    expect(sent[2]).toContain('"zone":"Residential"');
   });
 });
