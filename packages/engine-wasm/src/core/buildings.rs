@@ -12,6 +12,7 @@ pub const ARCH_UTIL_COAL_PLANT: u16 = 201;
 pub const ARCH_UTIL_WIND_TURBINE: u16 = 202;
 /// Power line: sets TileFlags::CONDUCTOR on placed tiles (handled in Loop 04).
 pub const ARCH_INFRA_POWER_LINE: u16 = 203;
+pub const ARCH_UTIL_WATER_PUMP: u16 = 210;
 pub const ARCH_CIV_HOSPITAL: u16 = 300;
 pub const ARCH_COM_CORNER_SHOP: u16 = 400;
 pub const ARCH_CIV_SCHOOL: u16 = 500;
@@ -67,6 +68,8 @@ fn base_city_builder_archetypes() -> Vec<ArchetypeDefinition> {
             power_supply_kw: 0,
             water_demand: 2,
             water_supply: 0,
+            water_coverage_radius: 0,
+            is_water_pipe: false,
             service_radius: 0,
             desirability_radius: 2,
             desirability_magnitude: 1,
@@ -93,6 +96,8 @@ fn base_city_builder_archetypes() -> Vec<ArchetypeDefinition> {
             power_supply_kw: 500,
             water_demand: 10,
             water_supply: 0,
+            water_coverage_radius: 0,
+            is_water_pipe: false,
             service_radius: 0,
             desirability_radius: 8,
             desirability_magnitude: -5,
@@ -119,6 +124,8 @@ fn base_city_builder_archetypes() -> Vec<ArchetypeDefinition> {
             power_supply_kw: 700,
             water_demand: 15,
             water_supply: 0,
+            water_coverage_radius: 0,
+            is_water_pipe: false,
             service_radius: 0,
             desirability_radius: 8,
             desirability_magnitude: -5,
@@ -145,6 +152,8 @@ fn base_city_builder_archetypes() -> Vec<ArchetypeDefinition> {
             power_supply_kw: 200,
             water_demand: 0,
             water_supply: 0,
+            water_coverage_radius: 0,
+            is_water_pipe: false,
             service_radius: 0,
             desirability_radius: 4,
             desirability_magnitude: -1,
@@ -171,6 +180,8 @@ fn base_city_builder_archetypes() -> Vec<ArchetypeDefinition> {
             power_supply_kw: 0,
             water_demand: 0,
             water_supply: 0,
+            water_coverage_radius: 0,
+            is_water_pipe: false,
             service_radius: 0,
             desirability_radius: 0,
             desirability_magnitude: 0,
@@ -197,6 +208,8 @@ fn base_city_builder_archetypes() -> Vec<ArchetypeDefinition> {
             power_supply_kw: 0,
             water_demand: 20,
             water_supply: 0,
+            water_coverage_radius: 0,
+            is_water_pipe: false,
             service_radius: 30,
             desirability_radius: 5,
             desirability_magnitude: 3,
@@ -223,6 +236,8 @@ fn base_city_builder_archetypes() -> Vec<ArchetypeDefinition> {
             power_supply_kw: 0,
             water_demand: 3,
             water_supply: 0,
+            water_coverage_radius: 0,
+            is_water_pipe: false,
             service_radius: 10,
             desirability_radius: 3,
             desirability_magnitude: 2,
@@ -249,6 +264,8 @@ fn base_city_builder_archetypes() -> Vec<ArchetypeDefinition> {
             power_supply_kw: 0,
             water_demand: 8,
             water_supply: 0,
+            water_coverage_radius: 0,
+            is_water_pipe: false,
             service_radius: 20,
             desirability_radius: 4,
             desirability_magnitude: 4,
@@ -275,6 +292,8 @@ fn base_city_builder_archetypes() -> Vec<ArchetypeDefinition> {
             power_supply_kw: 0,
             water_demand: 6,
             water_supply: 0,
+            water_coverage_radius: 0,
+            is_water_pipe: false,
             service_radius: 0,
             desirability_radius: 4,
             desirability_magnitude: -3,
@@ -284,6 +303,34 @@ fn base_city_builder_archetypes() -> Vec<ArchetypeDefinition> {
             max_level: 3,
             prerequisites: vec![],
             workspace_per_job_m2: 30,
+            living_space_per_person_m2: 0,
+        },
+        ArchetypeDefinition {
+            id: ARCH_UTIL_WATER_PUMP,
+            name: "water_pump".to_string(),
+            tags: vec![ArchetypeTag::Utility],
+            footprint_w: 2,
+            footprint_h: 2,
+            coverage_ratio_pct: 60,
+            floors: 1,
+            usable_ratio_pct: 80,
+            base_cost_cents: 80_000,
+            base_upkeep_cents_per_tick: 5,
+            power_demand_kw: 15,
+            power_supply_kw: 0,
+            water_demand: 0,
+            water_supply: 200,
+            water_coverage_radius: 6,
+            is_water_pipe: false,
+            service_radius: 0,
+            desirability_radius: 3,
+            desirability_magnitude: -1,
+            pollution: 2,
+            noise: 4,
+            build_time_ticks: 200,
+            max_level: 3,
+            prerequisites: vec![],
+            workspace_per_job_m2: 10,
             living_space_per_person_m2: 0,
         },
     ]
@@ -297,12 +344,17 @@ mod tests {
     fn register_base_archetypes_populates_registry() {
         let mut registry = ArchetypeRegistry::new();
         register_base_city_builder_archetypes(&mut registry);
-        assert!(registry.count() >= 9);
+        assert!(registry.count() >= 10);
         assert!(registry.get(ARCH_RES_SMALL_HOUSE).is_some());
         assert!(registry.get(ARCH_IND_LIGHT_FACTORY).is_some());
         assert!(registry.get(ARCH_UTIL_COAL_PLANT).is_some());
         assert!(registry.get(ARCH_UTIL_WIND_TURBINE).is_some());
         assert!(registry.get(ARCH_INFRA_POWER_LINE).is_some());
+        assert!(registry.get(ARCH_UTIL_WATER_PUMP).is_some());
+        let pump = registry.get(ARCH_UTIL_WATER_PUMP).unwrap();
+        assert_eq!(pump.water_supply, 200);
+        assert_eq!(pump.water_coverage_radius, 6);
+        assert!(!pump.is_water_pipe);
     }
 
     #[test]

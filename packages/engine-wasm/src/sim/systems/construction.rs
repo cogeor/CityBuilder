@@ -120,6 +120,8 @@ mod tests {
             power_supply_kw: 0,
             water_demand: 1,
             water_supply: 0,
+            water_coverage_radius: 0,
+            is_water_pipe: false,
             service_radius: 0,
             desirability_radius: 0,
             desirability_magnitude: 0,

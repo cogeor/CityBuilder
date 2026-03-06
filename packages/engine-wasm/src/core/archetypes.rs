@@ -61,6 +61,12 @@ pub struct ArchetypeDefinition {
     pub water_demand: u32,
     /// Water supply in units (only for water facilities).
     pub water_supply: u32,
+    /// Radius in tiles over which a water facility distributes supply.
+    /// 0 for buildings that are not water sources.
+    pub water_coverage_radius: u8,
+    /// When true, tiles occupied by this archetype act as water
+    /// conductors (BFS propagation, analogous to PowerLine).
+    pub is_water_pipe: bool,
     /// Service radius in tiles (for service buildings like hospitals, schools).
     pub service_radius: u8,
     /// Desirability effect: positive for parks, negative for industry.
@@ -204,6 +210,8 @@ mod tests {
             power_supply_kw: 0,
             water_demand: 2,
             water_supply: 0,
+            water_coverage_radius: 0,
+            is_water_pipe: false,
             service_radius: 0,
             desirability_radius: 2,
             desirability_magnitude: 5,
@@ -234,6 +242,8 @@ mod tests {
             power_supply_kw: 5000,
             water_demand: 10,
             water_supply: 0,
+            water_coverage_radius: 0,
+            is_water_pipe: false,
             service_radius: 0,
             desirability_radius: 5,
             desirability_magnitude: -20,
@@ -264,6 +274,8 @@ mod tests {
             power_supply_kw: 0,
             water_demand: 3,
             water_supply: 0,
+            water_coverage_radius: 0,
+            is_water_pipe: false,
             service_radius: 0,
             desirability_radius: 3,
             desirability_magnitude: 3,

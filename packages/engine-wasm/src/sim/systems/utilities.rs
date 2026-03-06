@@ -3,10 +3,17 @@
 //! Each tick, computes total supply vs. demand for power and water.
 //! When supply >= demand, all buildings are satisfied.
 //! When supply < demand, allocates by priority (civic > residential > commercial > industrial).
+//!
+//! Also provides `compute_water_coverage`, a BFS-based spatial system that marks
+//! tiles within each water pump's `water_coverage_radius` as `TileFlags::WATERED`.
+
+use std::collections::VecDeque;
 
 use crate::core::archetypes::ArchetypeRegistry;
 use crate::core::entity::EntityStore;
 use crate::core::events::{EventBus, SimEvent, UtilityType};
+use crate::core::tilemap::TileFlags;
+use crate::core::world::WorldState;
 use crate::core_types::*;
 
 /// Result of utility distribution for one utility type.
@@ -232,6 +239,131 @@ where
     }
 }
 
+// ─── Water Coverage (BFS spatial) ───────────────────────────────────────────
+
+/// Aggregate water accounting for one simulation tick (spatial BFS model).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WaterState {
+    /// Total water supply across all active, enabled water pumps.
+    pub total_supply: u32,
+    /// Total water demand across all active, enabled consumers.
+    pub total_demand: u32,
+    /// Unmet demand (`total_demand.saturating_sub(total_supply)`).
+    pub deficit: u32,
+}
+
+/// Run one full water-coverage tick using BFS flood from each water pump.
+///
+/// 1. **Clear** all `TileFlags::WATERED` flags from every tile.
+/// 2. **Scan** all alive, non-under-construction entities.  Collect the tile
+///    positions of every enabled water pump (`water_supply > 0`) together with
+///    its `water_coverage_radius`.  Accumulate `total_supply` and
+///    `total_demand`.
+/// 3. **BFS flood** from each pump position, propagating up to
+///    `water_coverage_radius` steps away.  Every visited tile is marked
+///    `TileFlags::WATERED`.  Distance is tracked in the queue as `(x, y, dist)`;
+///    a tile is enqueued only when `dist < radius` so that the frontier
+///    never expands beyond the radius.
+/// 4. Compute `deficit` and return the [`WaterState`] summary.
+pub fn compute_water_coverage(world: &mut WorldState, registry: &ArchetypeRegistry) -> WaterState {
+    // ── Phase 1: clear all WATERED flags ─────────────────────────────────
+    let coords: Vec<(u32, u32)> = world.tiles.iter().map(|(x, y, _)| (x, y)).collect();
+    for (x, y) in coords {
+        world.tiles.clear_flags(x, y, TileFlags::WATERED);
+    }
+
+    // ── Phase 2: scan entities ────────────────────────────────────────────
+    let mut total_supply: u32 = 0;
+    let mut total_demand: u32 = 0;
+    // Each pump: (tile_x, tile_y, coverage_radius)
+    let mut pumps: Vec<(u32, u32, u8)> = Vec::new();
+
+    let handles: Vec<_> = world.entities.iter_alive().collect();
+    for handle in handles {
+        let flags = world.entities.get_flags(handle).unwrap_or(StatusFlags::NONE);
+        if flags.contains(StatusFlags::UNDER_CONSTRUCTION) {
+            continue;
+        }
+
+        let arch_id = match world.entities.get_archetype(handle) {
+            Some(id) => id,
+            None => continue,
+        };
+        let def = match registry.get(arch_id) {
+            Some(d) => d,
+            None => continue,
+        };
+
+        let enabled = world.entities.get_enabled(handle).unwrap_or(true);
+        if !enabled {
+            continue;
+        }
+
+        total_supply += def.water_supply;
+        total_demand += def.water_demand;
+
+        if def.water_supply > 0 && def.water_coverage_radius > 0 {
+            if let Some(coord) = world.entities.get_pos(handle) {
+                if coord.x >= 0 && coord.y >= 0 {
+                    pumps.push((coord.x as u32, coord.y as u32, def.water_coverage_radius));
+                }
+            }
+        }
+    }
+
+    // ── Phase 3: BFS flood from each pump within its coverage radius ──────
+    // Queue entries: (x, y, current_dist, max_radius)
+    // We run separate BFS waves per pump but share a single VecDeque for
+    // efficiency.  The WATERED flag acts as the "visited" marker so tiles
+    // already covered by one pump are skipped when reached by another.
+    let mut frontier: VecDeque<(u32, u32, u8, u8)> = VecDeque::new();
+
+    for (sx, sy, radius) in pumps {
+        if !world.tiles.in_bounds(sx, sy) {
+            continue;
+        }
+        // Mark source tile as WATERED if not already done.
+        let already = world
+            .tiles
+            .get(sx, sy)
+            .map(|t| t.flags.contains(TileFlags::WATERED))
+            .unwrap_or(false);
+        if !already {
+            world.tiles.set_flags(sx, sy, TileFlags::WATERED);
+        }
+        // Enqueue at distance 0 with this pump's radius.
+        frontier.push_back((sx, sy, 0, radius));
+    }
+
+    while let Some((x, y, dist, radius)) = frontier.pop_front() {
+        // Only expand neighbours when we haven't reached the radius limit.
+        if dist >= radius {
+            continue;
+        }
+        for neighbour in world.tiles.tile_neighbors(x, y).into_iter().flatten() {
+            let (nx, ny) = neighbour;
+            let already_watered = world
+                .tiles
+                .get(nx, ny)
+                .map(|t| t.flags.contains(TileFlags::WATERED))
+                .unwrap_or(true);
+            if !already_watered {
+                world.tiles.set_flags(nx, ny, TileFlags::WATERED);
+                frontier.push_back((nx, ny, dist + 1, radius));
+            }
+        }
+    }
+
+    // ── Phase 4: compute deficit ──────────────────────────────────────────
+    let deficit = total_demand.saturating_sub(total_supply);
+
+    WaterState {
+        total_supply,
+        total_demand,
+        deficit,
+    }
+}
+
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -262,6 +394,8 @@ mod tests {
             power_supply_kw: power_supply,
             water_demand,
             water_supply,
+            water_coverage_radius: 0,
+            is_water_pipe: false,
             service_radius: 0,
             desirability_radius: 0,
             desirability_magnitude: 0,
@@ -536,5 +670,195 @@ mod tests {
         assert_eq!(balance.demand, 0);
         assert_eq!(balance.satisfied, 0);
         assert_eq!(balance.unsatisfied, 0);
+    }
+
+    // ─── Water Coverage (BFS) Tests ─────────────────────────────────────────
+
+    use crate::core::tilemap::TileMap;
+    use crate::core::world::{CityPolicies, WorldSeeds, WorldState};
+    use crate::core_types::MapSize;
+
+    /// Build a minimal pump `ArchetypeDefinition` with given coverage radius.
+    fn make_pump_archetype(id: u16, water_supply: u32, water_coverage_radius: u8) -> ArchetypeDefinition {
+        ArchetypeDefinition {
+            id,
+            name: format!("Pump {}", id),
+            tags: vec![ArchetypeTag::Utility],
+            footprint_w: 1,
+            footprint_h: 1,
+            coverage_ratio_pct: 50,
+            floors: 1,
+            usable_ratio_pct: 80,
+            base_cost_cents: 80_000,
+            base_upkeep_cents_per_tick: 5,
+            power_demand_kw: 0,
+            power_supply_kw: 0,
+            water_demand: 0,
+            water_supply,
+            water_coverage_radius,
+            is_water_pipe: false,
+            service_radius: 0,
+            desirability_radius: 0,
+            desirability_magnitude: 0,
+            pollution: 0,
+            noise: 0,
+            build_time_ticks: 100,
+            max_level: 3,
+            prerequisites: vec![],
+            workspace_per_job_m2: 0,
+            living_space_per_person_m2: 0,
+        }
+    }
+
+    fn make_world_state(tiles: TileMap, entities: EntityStore) -> WorldState {
+        let size = MapSize::new(tiles.width() as u16, tiles.height() as u16);
+        WorldState {
+            tiles,
+            entities,
+            policies: CityPolicies::default(),
+            seeds: WorldSeeds::new(0),
+            tick: 0,
+            treasury: 0,
+            city_name: String::from("Test"),
+        }
+    }
+
+    fn make_active_entity_2d(
+        entities: &mut EntityStore,
+        arch_id: u16,
+        x: i16,
+        y: i16,
+    ) -> EntityHandle {
+        let h = entities.alloc(arch_id, x, y, 0).unwrap();
+        entities.set_flags(h, StatusFlags::NONE);
+        h
+    }
+
+    /// A pump with radius 2 should water the source tile and all tiles within
+    /// 2 steps (Manhattan distance).
+    #[test]
+    fn pump_waters_tiles_within_radius() {
+        // 7x1 map: pump at (3,0), radius 2 => tiles 1,2,3,4,5 watered; 0 and 6 not.
+        let tiles = TileMap::new(7, 1);
+        let mut entities = EntityStore::new(16);
+        let mut registry = ArchetypeRegistry::new();
+
+        registry.register(make_pump_archetype(1, 200, 2));
+        make_active_entity_2d(&mut entities, 1, 3, 0);
+
+        let mut world = make_world_state(tiles, entities);
+        let state = compute_water_coverage(&mut world, &registry);
+
+        assert_eq!(state.total_supply, 200);
+        assert_eq!(state.total_demand, 0);
+        assert_eq!(state.deficit, 0);
+
+        // Tiles within radius 2 of (3,0): x = 1..=5
+        for x in 1_u32..=5 {
+            assert!(
+                world.tiles.get(x, 0).unwrap().flags.contains(TileFlags::WATERED),
+                "tile ({x},0) should be WATERED"
+            );
+        }
+        // Tiles at distance 3: x=0 and x=6 must NOT be watered.
+        assert!(
+            !world.tiles.get(0, 0).unwrap().flags.contains(TileFlags::WATERED),
+            "tile (0,0) must NOT be WATERED"
+        );
+        assert!(
+            !world.tiles.get(6, 0).unwrap().flags.contains(TileFlags::WATERED),
+            "tile (6,0) must NOT be WATERED"
+        );
+    }
+
+    /// Stale WATERED flags from a previous tick must be cleared before BFS.
+    #[test]
+    fn stale_watered_flags_are_cleared() {
+        let mut tiles = TileMap::new(5, 1);
+        // Pre-seed a stale WATERED flag far from any pump.
+        tiles.set_flags(4, 0, TileFlags::WATERED);
+
+        let entities = EntityStore::new(16);
+        let registry = ArchetypeRegistry::new();
+
+        let mut world = make_world_state(tiles, entities);
+        compute_water_coverage(&mut world, &registry);
+
+        assert!(
+            !world.tiles.get(4, 0).unwrap().flags.contains(TileFlags::WATERED),
+            "stale WATERED flag on tile (4,0) must have been cleared"
+        );
+    }
+
+    /// With no pump entities, no tile should be WATERED.
+    #[test]
+    fn no_pump_no_watered_tiles() {
+        let tiles = TileMap::new(4, 4);
+        let entities = EntityStore::new(16);
+        let registry = ArchetypeRegistry::new();
+
+        let mut world = make_world_state(tiles, entities);
+        let state = compute_water_coverage(&mut world, &registry);
+
+        assert_eq!(state.total_supply, 0);
+        for y in 0..4_u32 {
+            for x in 0..4_u32 {
+                assert!(
+                    !world.tiles.get(x, y).unwrap().flags.contains(TileFlags::WATERED),
+                    "tile ({x},{y}) must NOT be WATERED"
+                );
+            }
+        }
+    }
+
+    /// Two pumps at opposite corners of a 5x1 map each with radius 1 should
+    /// water their own adjacent tiles without crossing into the other's zone.
+    #[test]
+    fn two_pumps_cover_non_overlapping_zones() {
+        // Layout: [Pump0] [.] [.] [.] [Pump1]  (5x1)
+        // Pump at x=0 radius 1 => waters x=0,1
+        // Pump at x=4 radius 1 => waters x=3,4
+        // x=2 is in the middle — neither pump reaches it.
+        let tiles = TileMap::new(5, 1);
+        let mut entities = EntityStore::new(16);
+        let mut registry = ArchetypeRegistry::new();
+
+        registry.register(make_pump_archetype(1, 100, 1));
+        make_active_entity_2d(&mut entities, 1, 0, 0);
+        make_active_entity_2d(&mut entities, 1, 4, 0);
+
+        let mut world = make_world_state(tiles, entities);
+        let state = compute_water_coverage(&mut world, &registry);
+
+        assert_eq!(state.total_supply, 200); // two pumps × 100
+
+        assert!(world.tiles.get(0, 0).unwrap().flags.contains(TileFlags::WATERED), "tile (0,0)");
+        assert!(world.tiles.get(1, 0).unwrap().flags.contains(TileFlags::WATERED), "tile (1,0)");
+        assert!(!world.tiles.get(2, 0).unwrap().flags.contains(TileFlags::WATERED), "tile (2,0) must NOT be WATERED");
+        assert!(world.tiles.get(3, 0).unwrap().flags.contains(TileFlags::WATERED), "tile (3,0)");
+        assert!(world.tiles.get(4, 0).unwrap().flags.contains(TileFlags::WATERED), "tile (4,0)");
+    }
+
+    /// Under-construction pump should not contribute to coverage.
+    #[test]
+    fn under_construction_pump_not_counted() {
+        let tiles = TileMap::new(5, 1);
+        let mut entities = EntityStore::new(16);
+        let mut registry = ArchetypeRegistry::new();
+
+        registry.register(make_pump_archetype(1, 200, 3));
+        // Allocate but do NOT clear UNDER_CONSTRUCTION.
+        let _ = entities.alloc(1, 2, 0, 0).unwrap();
+
+        let mut world = make_world_state(tiles, entities);
+        let state = compute_water_coverage(&mut world, &registry);
+
+        assert_eq!(state.total_supply, 0, "under-construction pump supplies nothing");
+        for x in 0..5_u32 {
+            assert!(
+                !world.tiles.get(x, 0).unwrap().flags.contains(TileFlags::WATERED),
+                "tile ({x},0) must NOT be WATERED"
+            );
+        }
     }
 }
