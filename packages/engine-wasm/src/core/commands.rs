@@ -967,6 +967,40 @@ mod tests {
         }
     }
 
+    // ── SetZoning road perimeter ────────────────────────────────────────
+
+    #[test]
+    fn set_zoning_small_zone_creates_perimeter_roads() {
+        // w=3, h=3 → the zoning code auto-creates perimeter roads for any size
+        let mut world = make_world();
+        let mut road_graph = crate::core::network::RoadGraph::new();
+        let cmd = Command::SetZoning {
+            x: 4, y: 4, w: 3, h: 3,
+            zone: ZoneType::Residential,
+            density: ZoneDensity::Low,
+        };
+        apply_command_with_registry(&mut world, None, Some(&mut road_graph), &cmd).unwrap();
+        // The road graph should have at least one segment after zoning
+        assert!(road_graph.edge_count() > 0, "auto-perimeter road should be created for any size zone");
+    }
+
+    #[test]
+    fn set_zoning_perimeter_roads_idempotent() {
+        let mut world = make_world();
+        let mut road_graph = crate::core::network::RoadGraph::new();
+        let cmd = Command::SetZoning {
+            x: 2, y: 2, w: 6, h: 6,
+            zone: ZoneType::Residential,
+            density: ZoneDensity::Low,
+        };
+        // Apply twice
+        apply_command_with_registry(&mut world, None, Some(&mut road_graph), &cmd).unwrap();
+        let count_after_first = road_graph.edge_count();
+        apply_command_with_registry(&mut world, None, Some(&mut road_graph), &cmd).unwrap();
+        let count_after_second = road_graph.edge_count();
+        assert_eq!(count_after_first, count_after_second, "road count should not double on idempotent rezoning");
+    }
+
     // ── Round-trip: place then remove ───────────────────────────────────
 
     #[test]

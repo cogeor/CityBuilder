@@ -602,6 +602,140 @@ mod tests {
     }
 
     #[test]
+    fn commercial_zone_develops_over_time() {
+        let mut world = WorldState::new(MapSize::new(16, 16), 77);
+        let mut registry = ArchetypeRegistry::new();
+        register_base_city_builder_archetypes(&mut registry);
+
+        for y in 2..8u32 {
+            for x in 2..8u32 {
+                world.tiles.set_zone(x, y, ZoneType::Commercial);
+            }
+        }
+
+        let mut rng = Rng::new(77);
+        let mut state = DevelopmentState::new(16, 16);
+        // Run multiple ticks — the stripe walker tries one position per pair per tick.
+        let config = DevelopmentConfig { tick_interval: 1, max_attempts_per_tick: 128, max_placements_per_tick: 8, suitability_threshold: GROWTH_THRESHOLD };
+        let mut total_placed = 0u32;
+        for tick in 1..=50 {
+            total_placed += tick_zoned_development_with_config(
+                &mut world, &registry, tick, &mut rng, config, &mut state, ZoneDemand::FULL, None,
+            );
+            if total_placed > 0 { break; }
+        }
+        assert!(total_placed > 0, "commercial zone should develop within 50 ticks");
+    }
+
+    #[test]
+    fn industrial_zone_develops_over_time() {
+        let mut world = WorldState::new(MapSize::new(16, 16), 99);
+        let mut registry = ArchetypeRegistry::new();
+        register_base_city_builder_archetypes(&mut registry);
+
+        // Large zone: 12x12 = 144 tiles. The 2x2 factory needs interior space;
+        // a larger zone ensures the stripe walker finds a valid placement position.
+        for y in 0..12u32 {
+            for x in 0..12u32 {
+                world.tiles.set_zone(x, y, ZoneType::Industrial);
+            }
+        }
+
+        let mut rng = Rng::new(99);
+        let mut state = DevelopmentState::new(16, 16);
+        // The stripe walker tries one position per zone/density pair per tick.
+        // Run up to 50 ticks to guarantee the walker reaches a valid interior position.
+        let config = DevelopmentConfig { tick_interval: 1, max_attempts_per_tick: 128, max_placements_per_tick: 8, suitability_threshold: GROWTH_THRESHOLD };
+        let mut total_placed = 0u32;
+        for tick in 1..=50 {
+            total_placed += tick_zoned_development_with_config(
+                &mut world, &registry, tick, &mut rng, config, &mut state, ZoneDemand::FULL, None,
+            );
+            if total_placed > 0 { break; }
+        }
+        assert!(total_placed > 0, "industrial zone should develop within 50 ticks");
+    }
+
+    #[test]
+    fn development_gated_by_tick_interval() {
+        let mut world = WorldState::new(MapSize::new(16, 16), 5);
+        let mut registry = ArchetypeRegistry::new();
+        register_base_city_builder_archetypes(&mut registry);
+
+        for y in 0..8u32 {
+            for x in 0..8u32 {
+                world.tiles.set_zone(x, y, ZoneType::Residential);
+            }
+        }
+
+        let mut rng = Rng::new(5);
+        let mut state = DevelopmentState::new(16, 16);
+
+        // Tick 1 is not a multiple of 20 → zero placements
+        let placed = tick_zoned_development_with_config(
+            &mut world, &registry, 1, &mut rng,
+            DevelopmentConfig { tick_interval: 20, max_attempts_per_tick: 64, max_placements_per_tick: 8, suitability_threshold: GROWTH_THRESHOLD },
+            &mut state, ZoneDemand::FULL, None,
+        );
+        assert_eq!(placed, 0, "should not develop on non-interval ticks");
+
+        // Tick 20 is a multiple of 20 → placements allowed
+        let placed20 = tick_zoned_development_with_config(
+            &mut world, &registry, 20, &mut rng,
+            DevelopmentConfig { tick_interval: 20, max_attempts_per_tick: 64, max_placements_per_tick: 8, suitability_threshold: GROWTH_THRESHOLD },
+            &mut state, ZoneDemand::FULL, None,
+        );
+        assert!(placed20 > 0, "should develop on interval tick");
+    }
+
+    #[test]
+    fn development_blocked_when_treasury_insufficient() {
+        let mut world = WorldState::new(MapSize::new(16, 16), 3);
+        let mut registry = ArchetypeRegistry::new();
+        register_base_city_builder_archetypes(&mut registry);
+
+        for y in 0..8u32 {
+            for x in 0..8u32 {
+                world.tiles.set_zone(x, y, ZoneType::Residential);
+            }
+        }
+        // Drain treasury below any archetype cost
+        world.treasury = 0;
+
+        let mut rng = Rng::new(3);
+        let mut state = DevelopmentState::new(16, 16);
+        let placed = tick_zoned_development_with_config(
+            &mut world, &registry, 1, &mut rng,
+            DevelopmentConfig { tick_interval: 1, max_attempts_per_tick: 64, max_placements_per_tick: 8, suitability_threshold: GROWTH_THRESHOLD },
+            &mut state, ZoneDemand::FULL, None,
+        );
+        assert_eq!(placed, 0, "development blocked when treasury is empty");
+    }
+
+    #[test]
+    fn development_respects_max_placements_per_tick() {
+        let mut world = WorldState::new(MapSize::new(16, 16), 11);
+        let mut registry = ArchetypeRegistry::new();
+        register_base_city_builder_archetypes(&mut registry);
+
+        // Large zoned area — more than 1 possible placement
+        for y in 0..12u32 {
+            for x in 0..12u32 {
+                world.tiles.set_zone(x, y, ZoneType::Residential);
+            }
+        }
+
+        let mut rng = Rng::new(11);
+        let mut state = DevelopmentState::new(16, 16);
+        let placed = tick_zoned_development_with_config(
+            &mut world, &registry, 1, &mut rng,
+            DevelopmentConfig { tick_interval: 1, max_attempts_per_tick: 256, max_placements_per_tick: 1, suitability_threshold: GROWTH_THRESHOLD },
+            &mut state, ZoneDemand::FULL, None,
+        );
+        assert_eq!(placed, 1, "should place at most max_placements_per_tick=1 per tick");
+    }
+
+    #[test]
     fn density_archetype_routing_high_density() {
         // Register an archetype tagged HighDensity + Residential
         use crate::core::archetypes::{ArchetypeDefinition, ArchetypeTag};
