@@ -11,6 +11,7 @@ use crate::core::network::{RoadGraph, RoadType};
 use crate::core::tilemap::TileMap;
 use crate::core::world::{CityPolicies, WorldState};
 use crate::core_types::*;
+use crate::sim::speed::SimSpeed;
 use serde::{Deserialize, Serialize};
 
 /// A player command that mutates the canonical world state.
@@ -71,6 +72,8 @@ pub enum Command {
         x: i16,
         y: i16,
     },
+    /// Pause or change the simulation speed.
+    SetSimSpeed { speed: SimSpeed },
 }
 
 /// Policy keys that can be changed via SetPolicy command.
@@ -111,7 +114,7 @@ pub enum CommandError {
 pub type CommandResult = Result<CommandEffect, CommandError>;
 
 /// What changed as a result of a command.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CommandEffect {
     EntityPlaced { handle: EntityHandle },
     EntityRemoved { handle: EntityHandle },
@@ -123,6 +126,8 @@ pub enum CommandEffect {
     TerrainApplied { count: u32 },
     RoadLineApplied { count: u32 },
     RoadRemoved { x: i16, y: i16 },
+    /// Simulation speed was changed.
+    SimSpeedChanged { speed: SimSpeed },
 }
 
 /// Apply a command to the world state after validation.
@@ -371,6 +376,14 @@ pub fn apply_command_with_registry(
             }
 
             Ok(CommandEffect::RoadLineApplied { count })
+        }
+
+        Command::SetSimSpeed { speed } => {
+            // Speed is engine-level state; the actual change is applied by
+            // SimulationEngine::apply_command which intercepts this command
+            // before reaching here. When called via the bare world API,
+            // return the effect with no world-state mutation.
+            Ok(CommandEffect::SimSpeedChanged { speed: *speed })
         }
 
         Command::RemoveRoad { x, y } => {

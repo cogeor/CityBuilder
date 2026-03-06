@@ -108,7 +108,10 @@ impl GameHandle {
         };
 
         match engine.apply_command(&cmd) {
-            Ok(effect) => format!(r#"{{"ok":"{}"}}"#, format!("{:?}", effect)),
+            Ok(effect) => match serde_json::to_string(&effect) {
+                Ok(json) => format!(r#"{{"ok":{}}}"#, json),
+                Err(e) => format!(r#"{{"error":"serialize: {}"}}"#, e),
+            },
             Err(err) => format!(r#"{{"error":"{}"}}"#, format!("{:?}", err)),
         }
     }
@@ -330,7 +333,36 @@ mod tests {
         assert_eq!(handle.get_tick(), 50);
     }
 
-    // ── Test 11: no engine gracefully handles calls ─────────────────────
+    // ── Test 11: SetSimSpeed via JSON returns structured effect ─────────
+
+    #[test]
+    fn apply_command_json_set_sim_speed_paused() {
+        let mut handle = GameHandle::new(42, 16, 16);
+        let result = handle.apply_command_json(r#"{"SetSimSpeed":{"speed":"Paused"}}"#);
+        assert!(result.contains("\"ok\""), "Expected ok, got: {}", result);
+        assert!(result.contains("SimSpeedChanged"), "Expected SimSpeedChanged in: {}", result);
+        assert!(result.contains("Paused"));
+        // Tick should not advance when paused.
+        let tick_before = handle.get_tick();
+        handle.tick();
+        assert_eq!(handle.get_tick(), tick_before, "Paused engine should not advance tick");
+    }
+
+    #[test]
+    fn apply_command_json_set_sim_speed_normal() {
+        let mut handle = GameHandle::new(42, 16, 16);
+        // Pause first, then resume.
+        handle.apply_command_json(r#"{"SetSimSpeed":{"speed":"Paused"}}"#);
+        let result = handle.apply_command_json(r#"{"SetSimSpeed":{"speed":"Normal"}}"#);
+        assert!(result.contains("\"ok\""), "Expected ok, got: {}", result);
+        assert!(result.contains("Normal"));
+        // Tick should advance after resuming.
+        let tick_before = handle.get_tick();
+        handle.tick();
+        assert!(handle.get_tick() > tick_before, "Resumed engine should advance tick");
+    }
+
+    // ── Test 12: no engine gracefully handles calls ─────────────────────
 
     #[test]
     fn no_engine_returns_defaults() {

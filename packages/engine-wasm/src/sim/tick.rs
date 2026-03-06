@@ -290,6 +290,11 @@ impl SimulationEngine {
     ///
     /// Delegates to `core::commands::apply_command`.
     pub fn apply_command(&mut self, cmd: &Command) -> CommandResult {
+        // Speed is engine-level — intercept before reaching WorldState mutation.
+        if let Command::SetSimSpeed { speed } = cmd {
+            self.set_speed(*speed);
+            return Ok(CommandEffect::SimSpeedChanged { speed: *speed });
+        }
         commands::apply_command_with_registry(
             &mut self.world,
             Some(&self.registry),
@@ -314,7 +319,8 @@ impl SimulationEngine {
             | CommandEffect::ZoningApplied { .. }
             | CommandEffect::TerrainApplied { .. }
             | CommandEffect::RoadLineApplied { .. }
-            | CommandEffect::RoadRemoved { .. } => {}
+            | CommandEffect::RoadRemoved { .. }
+            | CommandEffect::SimSpeedChanged { .. } => {}
         }
     }
 
@@ -363,7 +369,8 @@ impl SimulationEngine {
             | CommandEffect::ZoningApplied { .. }
             | CommandEffect::TerrainApplied { .. }
             | CommandEffect::RoadLineApplied { .. }
-            | CommandEffect::RoadRemoved { .. } => {}
+            | CommandEffect::RoadRemoved { .. }
+            | CommandEffect::SimSpeedChanged { .. } => {}
         }
     }
 }
