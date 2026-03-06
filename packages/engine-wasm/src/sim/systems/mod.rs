@@ -5,6 +5,7 @@ pub mod city_events;
 pub mod commute_happiness;
 pub mod construction;
 pub mod education;
+pub mod electricity;
 pub mod finance;
 pub mod infra_lifecycle;
 pub mod jobs;
