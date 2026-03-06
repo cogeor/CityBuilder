@@ -127,7 +127,7 @@ pub fn serialize_world(world: &WorldState) -> Vec<u8> {
                 buf.push(tile.terrain as u8);
                 buf.push(tile.kind   as u8);
                 buf.push(tile.zone   as u8);
-                buf.push(tile.flags.0);
+                buf.push(tile.flags.bits());
             }
         }
     }
@@ -140,7 +140,7 @@ pub fn serialize_world(world: &WorldState) -> Vec<u8> {
         buf.extend_from_slice(&world.entities.pos_y[idx].to_le_bytes());
         buf.push(world.entities.rotation[idx]);
         buf.push(world.entities.level[idx]);
-        buf.extend_from_slice(&world.entities.flags[idx].0.to_le_bytes());
+        buf.extend_from_slice(&world.entities.flags[idx].bits().to_le_bytes());
         buf.extend_from_slice(&world.entities.construction_progress[idx].to_le_bytes());
         buf.push(if world.entities.enabled[idx] { 1u8 } else { 0u8 });
     }
@@ -309,7 +309,7 @@ pub fn deserialize_world(data: &[u8]) -> Result<WorldState, SaveError> {
             let terrain = terrain_from_u8(cursor.read_u8()?)?;
             let kind    = kind_from_u8(cursor.read_u8()?)?;
             let zone    = zone_from_u8(cursor.read_u8()?)?;
-            let flags   = TileFlags(cursor.read_u8()?);
+            let flags   = TileFlags::from_bits_retain(cursor.read_u8()?);
             tiles.set(x, y, TileValue { terrain, kind, zone, flags });
         }
     }
@@ -342,7 +342,7 @@ pub fn deserialize_world(data: &[u8]) -> Result<WorldState, SaveError> {
 
         // Override defaults set by alloc with the actual saved values
         entities.set_level(handle, level);
-        entities.set_flags(handle, StatusFlags(flags_raw));
+        entities.set_flags(handle, StatusFlags::from_bits_retain(flags_raw));
         entities.set_construction_progress(handle, construction_progress);
         entities.set_enabled(handle, enabled_byte != 0);
     }

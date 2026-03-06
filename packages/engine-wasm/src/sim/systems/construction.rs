@@ -55,8 +55,9 @@ pub fn tick_construction(
             entities.set_construction_progress(handle, 0xFFFF);
 
             // Remove UNDER_CONSTRUCTION flag.
-            if let Some(flags) = entities.get_flags(handle) {
-                entities.set_flags(handle, flags.remove(StatusFlags::UNDER_CONSTRUCTION));
+            if let Some(mut flags) = entities.get_flags(handle) {
+                flags.remove(StatusFlags::UNDER_CONSTRUCTION);
+                entities.set_flags(handle, flags);
             }
 
             events.publish(

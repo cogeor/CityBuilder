@@ -110,13 +110,14 @@ pub fn tick_jobs(
     let mut remaining_workers = population;
 
     for (handle, capacity) in &active_job_entities {
-        if let Some(flags) = entities.get_flags(*handle) {
+        if let Some(mut flags) = entities.get_flags(*handle) {
             if remaining_workers >= *capacity && *capacity > 0 {
                 remaining_workers -= *capacity;
-                entities.set_flags(*handle, flags.insert(StatusFlags::STAFFED));
+                flags.insert(StatusFlags::STAFFED);
             } else {
-                entities.set_flags(*handle, flags.remove(StatusFlags::STAFFED));
+                flags.remove(StatusFlags::STAFFED);
             }
+            entities.set_flags(*handle, flags);
         }
     }
 

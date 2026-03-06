@@ -196,13 +196,15 @@ where
 
     // Update flags.
     for handle in &satisfied_handles {
-        if let Some(flags) = entities.get_flags(*handle) {
-            entities.set_flags(*handle, flags.insert(satisfied_flag));
+        if let Some(mut flags) = entities.get_flags(*handle) {
+            flags.insert(satisfied_flag);
+            entities.set_flags(*handle, flags);
         }
     }
     for handle in &unsatisfied_handles {
-        if let Some(flags) = entities.get_flags(*handle) {
-            entities.set_flags(*handle, flags.remove(satisfied_flag));
+        if let Some(mut flags) = entities.get_flags(*handle) {
+            flags.remove(satisfied_flag);
+            entities.set_flags(*handle, flags);
         }
     }
 

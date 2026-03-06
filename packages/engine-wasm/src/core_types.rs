@@ -3,6 +3,7 @@
 //! All simulation-critical numeric types use integer or fixed-point arithmetic.
 //! No floating-point types are used in simulation logic.
 
+use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
 use std::ops::{Add, Sub};
 
@@ -218,123 +219,36 @@ pub enum TerrainType {
 
 // ─── StatusFlags ────────────────────────────────────────────────────────────
 
-/// Bitflag newtype for per-entity status indicators.
-///
-/// Uses a `u16` backing store. Each flag is a single bit.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct StatusFlags(pub u16);
+bitflags! {
+    /// Bitflag newtype for per-entity status indicators.
+    ///
+    /// Uses a `u16` backing store. Each flag is a single bit.
+    #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+    pub struct StatusFlags: u16 {
+        const POWERED            = 1 << 0;
+        const HAS_WATER          = 1 << 1;
+        const STAFFED            = 1 << 2;
+        const UNDER_CONSTRUCTION = 1 << 3;
+        const ON_FIRE            = 1 << 4;
+        const DAMAGED            = 1 << 5;
+    }
+}
 
 impl StatusFlags {
-    pub const NONE: StatusFlags = StatusFlags(0);
-    pub const POWERED: StatusFlags = StatusFlags(1 << 0);
-    pub const HAS_WATER: StatusFlags = StatusFlags(1 << 1);
-    pub const STAFFED: StatusFlags = StatusFlags(1 << 2);
-    pub const UNDER_CONSTRUCTION: StatusFlags = StatusFlags(1 << 3);
-    pub const ON_FIRE: StatusFlags = StatusFlags(1 << 4);
-    pub const DAMAGED: StatusFlags = StatusFlags(1 << 5);
+    /// Sentinel for "no flags set". Equivalent to `StatusFlags::empty()`.
+    pub const NONE: StatusFlags = StatusFlags::empty();
+}
 
-    /// Returns `true` if all bits in `other` are set in `self`.
-    #[inline]
-    pub const fn contains(self, other: StatusFlags) -> bool {
-        (self.0 & other.0) == other.0
-    }
-
-    /// Set the bits of `other` in `self`.
-    #[inline]
-    pub const fn insert(self, other: StatusFlags) -> StatusFlags {
-        StatusFlags(self.0 | other.0)
-    }
-
-    /// Clear the bits of `other` from `self`.
-    #[inline]
-    pub const fn remove(self, other: StatusFlags) -> StatusFlags {
-        StatusFlags(self.0 & !other.0)
-    }
-
-    /// Toggle the bits of `other` in `self`.
-    #[inline]
-    pub const fn toggle(self, other: StatusFlags) -> StatusFlags {
-        StatusFlags(self.0 ^ other.0)
-    }
-
-    /// Returns `true` if no flags are set.
-    #[inline]
-    pub const fn is_empty(self) -> bool {
-        self.0 == 0
+impl serde::Serialize for StatusFlags {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.bits().serialize(s)
     }
 }
 
-impl std::fmt::Debug for StatusFlags {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let mut first = true;
-        let mut remaining = self.0;
-
-        let flags = [
-            (Self::POWERED.0, "POWERED"),
-            (Self::HAS_WATER.0, "HAS_WATER"),
-            (Self::STAFFED.0, "STAFFED"),
-            (Self::UNDER_CONSTRUCTION.0, "UNDER_CONSTRUCTION"),
-            (Self::ON_FIRE.0, "ON_FIRE"),
-            (Self::DAMAGED.0, "DAMAGED"),
-        ];
-
-        write!(f, "StatusFlags(")?;
-        for (bit, name) in flags {
-            if remaining & bit != 0 {
-                if !first {
-                    write!(f, " | ")?;
-                }
-                write!(f, "{}", name)?;
-                remaining &= !bit;
-                first = false;
-            }
-        }
-        if remaining != 0 {
-            if !first {
-                write!(f, " | ")?;
-            }
-            write!(f, "0x{:04x}", remaining)?;
-        }
-        if first {
-            write!(f, "NONE")?;
-        }
-        write!(f, ")")
-    }
-}
-
-impl std::ops::BitOr for StatusFlags {
-    type Output = StatusFlags;
-
-    #[inline]
-    fn bitor(self, rhs: Self) -> Self::Output {
-        StatusFlags(self.0 | rhs.0)
-    }
-}
-
-impl std::ops::BitAnd for StatusFlags {
-    type Output = StatusFlags;
-
-    #[inline]
-    fn bitand(self, rhs: Self) -> Self::Output {
-        StatusFlags(self.0 & rhs.0)
-    }
-}
-
-impl std::ops::BitXor for StatusFlags {
-    type Output = StatusFlags;
-
-    #[inline]
-    fn bitxor(self, rhs: Self) -> Self::Output {
-        StatusFlags(self.0 ^ rhs.0)
-    }
-}
-
-impl std::ops::Not for StatusFlags {
-    type Output = StatusFlags;
-
-    #[inline]
-    fn not(self) -> Self::Output {
-        StatusFlags(!self.0)
+impl<'de> serde::Deserialize<'de> for StatusFlags {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let bits = u16::deserialize(d)?;
+        Ok(StatusFlags::from_bits_retain(bits))
     }
 }
 
@@ -435,9 +349,7 @@ mod tests {
 
     #[test]
     fn status_flags_insert_and_contains() {
-        let f = StatusFlags::NONE
-            .insert(StatusFlags::POWERED)
-            .insert(StatusFlags::HAS_WATER);
+        let f = StatusFlags::POWERED | StatusFlags::HAS_WATER;
         assert!(f.contains(StatusFlags::POWERED));
         assert!(f.contains(StatusFlags::HAS_WATER));
         assert!(!f.contains(StatusFlags::ON_FIRE));
@@ -445,18 +357,18 @@ mod tests {
 
     #[test]
     fn status_flags_remove() {
-        let f = StatusFlags::POWERED
-            .insert(StatusFlags::STAFFED)
-            .remove(StatusFlags::POWERED);
+        let mut f = StatusFlags::POWERED | StatusFlags::STAFFED;
+        f.remove(StatusFlags::POWERED);
         assert!(!f.contains(StatusFlags::POWERED));
         assert!(f.contains(StatusFlags::STAFFED));
     }
 
     #[test]
     fn status_flags_toggle() {
-        let f = StatusFlags::POWERED.toggle(StatusFlags::POWERED);
+        let mut f = StatusFlags::POWERED;
+        f.toggle(StatusFlags::POWERED);
         assert!(f.is_empty());
-        let f = f.toggle(StatusFlags::ON_FIRE);
+        f.toggle(StatusFlags::ON_FIRE);
         assert!(f.contains(StatusFlags::ON_FIRE));
     }
 

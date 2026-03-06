@@ -4,6 +4,7 @@
 //! SimCity C bitmap approach in safe, typed Rust.
 //! A 256x256 map holds 262 144 tiles = 1 MiB of tile data.
 
+use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
 
 use crate::core_types::{TerrainType, ZoneType};
@@ -36,106 +37,38 @@ impl Default for TileKind {
 
 // ─── TileFlags ───────────────────────────────────────────────────────────────
 
-/// Per-tile service and state flags packed into one byte.
-///
-/// Follows the same hand-rolled bitflag pattern as `StatusFlags` in
-/// `core_types.rs`. Bits 6-7 are reserved for future use.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct TileFlags(pub u8);
+bitflags! {
+    /// Per-tile service and state flags packed into one byte.
+    ///
+    /// Bits 6-7 are reserved for future use.
+    #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
+    pub struct TileFlags: u8 {
+        const POWERED            = 1 << 0; // 0x01
+        const WATERED            = 1 << 1; // 0x02
+        const ROAD_ACCESS        = 1 << 2; // 0x04
+        const UNDER_CONSTRUCTION = 1 << 3; // 0x08
+        const BULLDOZABLE        = 1 << 4; // 0x10
+        const ON_FIRE            = 1 << 5; // 0x20
+        // bits 6-7 reserved
+    }
+}
 
 impl TileFlags {
-    pub const NONE:               TileFlags = TileFlags(0);
-    pub const POWERED:            TileFlags = TileFlags(1 << 0); // 0x01
-    pub const WATERED:            TileFlags = TileFlags(1 << 1); // 0x02
-    pub const ROAD_ACCESS:        TileFlags = TileFlags(1 << 2); // 0x04
-    pub const UNDER_CONSTRUCTION: TileFlags = TileFlags(1 << 3); // 0x08
-    pub const BULLDOZABLE:        TileFlags = TileFlags(1 << 4); // 0x10
-    pub const ON_FIRE:            TileFlags = TileFlags(1 << 5); // 0x20
-    // bits 6-7 reserved
+    /// Sentinel for "no flags set". Equivalent to `TileFlags::empty()`.
+    pub const NONE: TileFlags = TileFlags::empty();
+}
 
-    /// Returns `true` if all bits of `other` are set in `self`.
-    #[inline]
-    pub const fn contains(self, other: TileFlags) -> bool {
-        (self.0 & other.0) == other.0
-    }
-
-    /// Set the bits of `other` in `self`.
-    #[inline]
-    pub fn insert(&mut self, other: TileFlags) {
-        self.0 |= other.0;
-    }
-
-    /// Clear the bits of `other` from `self`.
-    #[inline]
-    pub fn remove(&mut self, other: TileFlags) {
-        self.0 &= !other.0;
-    }
-
-    /// Returns `true` if no flags are set.
-    #[inline]
-    pub const fn is_empty(self) -> bool {
-        self.0 == 0
+impl serde::Serialize for TileFlags {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        self.bits().serialize(s)
     }
 }
 
-impl Default for TileFlags {
-    fn default() -> Self {
-        TileFlags::NONE
+impl<'de> serde::Deserialize<'de> for TileFlags {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let bits = u8::deserialize(d)?;
+        Ok(TileFlags::from_bits_retain(bits))
     }
-}
-
-impl std::fmt::Debug for TileFlags {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let flags = [
-            (Self::POWERED.0,            "POWERED"),
-            (Self::WATERED.0,            "WATERED"),
-            (Self::ROAD_ACCESS.0,        "ROAD_ACCESS"),
-            (Self::UNDER_CONSTRUCTION.0, "UNDER_CONSTRUCTION"),
-            (Self::BULLDOZABLE.0,        "BULLDOZABLE"),
-            (Self::ON_FIRE.0,            "ON_FIRE"),
-        ];
-        let mut first = true;
-        let mut remaining = self.0;
-        write!(f, "TileFlags(")?;
-        for (bit, name) in flags {
-            if remaining & bit != 0 {
-                if !first { write!(f, " | ")?; }
-                write!(f, "{}", name)?;
-                remaining &= !bit;
-                first = false;
-            }
-        }
-        if remaining != 0 {
-            if !first { write!(f, " | ")?; }
-            write!(f, "0x{:02x}", remaining)?;
-        }
-        if first { write!(f, "NONE")?; }
-        write!(f, ")")
-    }
-}
-
-impl std::ops::BitOr for TileFlags {
-    type Output = TileFlags;
-    #[inline]
-    fn bitor(self, rhs: Self) -> Self::Output { TileFlags(self.0 | rhs.0) }
-}
-
-impl std::ops::BitAnd for TileFlags {
-    type Output = TileFlags;
-    #[inline]
-    fn bitand(self, rhs: Self) -> Self::Output { TileFlags(self.0 & rhs.0) }
-}
-
-impl std::ops::BitXor for TileFlags {
-    type Output = TileFlags;
-    #[inline]
-    fn bitxor(self, rhs: Self) -> Self::Output { TileFlags(self.0 ^ rhs.0) }
-}
-
-impl std::ops::Not for TileFlags {
-    type Output = TileFlags;
-    #[inline]
-    fn not(self) -> Self::Output { TileFlags(!self.0) }
 }
 
 // ─── TileValue ───────────────────────────────────────────────────────────────
@@ -509,7 +442,7 @@ mod tests {
             | TileFlags::BULLDOZABLE
             | TileFlags::ON_FIRE;
         // Each constant must occupy a unique bit.
-        assert_eq!(all.0.count_ones(), 6);
+        assert_eq!(all.bits().count_ones(), 6);
     }
 
     // ── TileMap construction ─────────────────────────────────────────────────

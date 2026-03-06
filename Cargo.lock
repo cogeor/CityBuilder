@@ -1924,6 +1924,7 @@ dependencies = [
 name = "townbuilder-engine"
 version = "0.1.0"
 dependencies = [
+ "bitflags 2.11.0",
  "serde",
  "serde_json",
  "wasm-bindgen",

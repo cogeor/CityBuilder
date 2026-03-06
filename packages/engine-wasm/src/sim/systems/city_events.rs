@@ -126,8 +126,9 @@ pub fn tick_city_events(
     for (handle, pos) in &candidates {
         if rng.chance(fire_prob) {
             // Start a fire on this entity.
-            let current_flags = entities.get_flags(*handle).unwrap_or(StatusFlags::NONE);
-            entities.set_flags(*handle, current_flags.insert(StatusFlags::ON_FIRE));
+            let mut current_flags = entities.get_flags(*handle).unwrap_or(StatusFlags::NONE);
+            current_flags.insert(StatusFlags::ON_FIRE);
+            entities.set_flags(*handle, current_flags);
             state.add_fire(ActiveFire {
                 entity: *handle,
                 location: *pos,
@@ -171,8 +172,9 @@ pub fn tick_city_events(
     }
 
     for (handle, pos) in new_fires {
-        let current_flags = entities.get_flags(handle).unwrap_or(StatusFlags::NONE);
-        entities.set_flags(handle, current_flags.insert(StatusFlags::ON_FIRE));
+        let mut current_flags = entities.get_flags(handle).unwrap_or(StatusFlags::NONE);
+        current_flags.insert(StatusFlags::ON_FIRE);
+        entities.set_flags(handle, current_flags);
         state.add_fire(ActiveFire {
             entity: handle,
             location: pos,
@@ -187,11 +189,10 @@ pub fn tick_city_events(
     let expired = state.remove_expired();
     for fire in &expired {
         if entities.is_valid(fire.entity) {
-            let current_flags = entities.get_flags(fire.entity).unwrap_or(StatusFlags::NONE);
+            let mut new_flags = entities.get_flags(fire.entity).unwrap_or(StatusFlags::NONE);
             // Clear ON_FIRE, set DAMAGED.
-            let new_flags = current_flags
-                .remove(StatusFlags::ON_FIRE)
-                .insert(StatusFlags::DAMAGED);
+            new_flags.remove(StatusFlags::ON_FIRE);
+            new_flags.insert(StatusFlags::DAMAGED);
             entities.set_flags(fire.entity, new_flags);
         }
         events.publish(
@@ -352,8 +353,9 @@ mod tests {
         let pos = entities.get_pos(h).unwrap();
 
         // Manually start a fire via tick_city_events machinery:
-        let current = entities.get_flags(h).unwrap();
-        entities.set_flags(h, current.insert(StatusFlags::ON_FIRE));
+        let mut current = entities.get_flags(h).unwrap();
+        current.insert(StatusFlags::ON_FIRE);
+        entities.set_flags(h, current);
         state.add_fire(ActiveFire {
             entity: h,
             location: pos,
