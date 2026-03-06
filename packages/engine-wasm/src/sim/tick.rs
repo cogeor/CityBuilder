@@ -38,6 +38,8 @@ pub struct TickOutput {
     pub treasury: MoneyCents,
     /// Unmet power demand in kW after this tick (0 = no shortage).
     pub power_shortage_kw: u32,
+    /// Unmet water demand in kL after this tick (0 = no shortage).
+    pub water_shortage_kl: u32,
     /// Structured state/metric changes emitted this tick.
     pub world_diff: WorldDiff,
 }
@@ -70,6 +72,8 @@ pub struct SimulationEngine {
     pub power_shortage_kw: u32,
     /// Whether the previous tick had a water shortage.
     pub water_shortage: bool,
+    /// Unmet water demand in kL from the previous tick (0 = no shortage).
+    pub water_shortage_kl: u32,
     /// Queue of commands applied during phase 1 of the next tick.
     pub pending_commands: Vec<Command>,
     /// Cache dirty tracking and invalidation map.
@@ -102,6 +106,7 @@ impl SimulationEngine {
             power_shortage: false,
             power_shortage_kw: 0,
             water_shortage: false,
+            water_shortage_kl: 0,
             pending_commands: Vec::new(),
             cache_manager: CacheManager::new(),
             plugins: vec![
@@ -168,6 +173,7 @@ impl SimulationEngine {
             power_shortage: &mut self.power_shortage,
             power_shortage_kw: &mut self.power_shortage_kw,
             water_shortage: &mut self.water_shortage,
+            water_shortage_kl: &mut self.water_shortage_kl,
             phase_wheel: &self.phase_wheel,
         };
         // plugins is temporarily taken out so we can call &mut self.plugins
@@ -203,6 +209,11 @@ impl SimulationEngine {
             scope: MetricScope::Global,
             value: self.power_shortage_kw as i64,
         });
+        diffs.push_metric(MetricUpdate {
+            metric_id: 4, // water shortage kl
+            scope: MetricScope::Global,
+            value: self.water_shortage_kl as i64,
+        });
         let world_diff = WorldDiff::from_collector(tick, &mut diffs);
 
         // 12. Drain all events produced this tick.
@@ -214,6 +225,7 @@ impl SimulationEngine {
             population: self.population,
             treasury: self.world.treasury,
             power_shortage_kw: self.power_shortage_kw,
+            water_shortage_kl: self.water_shortage_kl,
             world_diff,
         }
     }
@@ -752,6 +764,174 @@ mod tests {
     }
 
     // ── Test: power_shortage_kw reflects deficit ─────────────────────────
+
+    // ── Helper archetypes for water tests ───────────────────────────────
+
+    fn make_water_consumer_arch(id: ArchetypeId) -> ArchetypeDefinition {
+        ArchetypeDefinition {
+            id,
+            name: format!("WaterConsumer {}", id),
+            tags: vec![ArchetypeTag::Residential, ArchetypeTag::LowDensity],
+            footprint_w: 1,
+            footprint_h: 1,
+            coverage_ratio_pct: 50,
+            floors: 1,
+            usable_ratio_pct: 80,
+            base_cost_cents: 50_000,
+            base_upkeep_cents_per_tick: 5,
+            power_demand_kw: 0,
+            power_supply_kw: 0,
+            water_demand: 10,
+            water_supply: 0,
+            water_coverage_radius: 0,
+            is_water_pipe: false,
+            service_radius: 0,
+            desirability_radius: 0,
+            desirability_magnitude: 0,
+            pollution: 0,
+            noise: 0,
+            build_time_ticks: 1,
+            max_level: 1,
+            prerequisites: vec![],
+            workspace_per_job_m2: 0,
+            living_space_per_person_m2: 20,
+        }
+    }
+
+    fn make_water_pump_arch(id: ArchetypeId) -> ArchetypeDefinition {
+        ArchetypeDefinition {
+            id,
+            name: format!("WaterPump {}", id),
+            tags: vec![ArchetypeTag::Utility],
+            footprint_w: 1,
+            footprint_h: 1,
+            coverage_ratio_pct: 100,
+            floors: 1,
+            usable_ratio_pct: 100,
+            base_cost_cents: 200_000,
+            base_upkeep_cents_per_tick: 20,
+            power_demand_kw: 0,
+            power_supply_kw: 0,
+            water_demand: 0,
+            water_supply: 1000,
+            water_coverage_radius: 20,
+            is_water_pipe: false,
+            service_radius: 0,
+            desirability_radius: 0,
+            desirability_magnitude: 0,
+            pollution: 0,
+            noise: 0,
+            build_time_ticks: 1,
+            max_level: 1,
+            prerequisites: vec![],
+            workspace_per_job_m2: 0,
+            living_space_per_person_m2: 0,
+        }
+    }
+
+    // ── Test: water_shortage_kl reflects deficit ─────────────────────────
+
+    #[test]
+    fn water_shortage_kl_reflects_deficit() {
+        // Scenario A — shortage: consumer with no pump.
+        {
+            let world = WorldState::new(MapSize::new(32, 32), 42);
+            let mut registry = ArchetypeRegistry::new();
+            let road_graph = RoadGraph::new();
+
+            let consumer_id: ArchetypeId = 1;
+            registry.register(make_water_consumer_arch(consumer_id));
+
+            let mut engine = SimulationEngine::new(world, registry, road_graph);
+
+            // Place the consumer (build_time=1, completes after first tick).
+            engine
+                .apply_command(&Command::SetZoning {
+                    x: 5,
+                    y: 5,
+                    w: 1,
+                    h: 1,
+                    zone: ZoneType::Residential,
+                })
+                .unwrap();
+            engine
+                .apply_command(&Command::PlaceEntity {
+                    archetype_id: consumer_id,
+                    x: 5,
+                    y: 5,
+                    rotation: 0,
+                })
+                .unwrap();
+
+            // Tick until construction completes then advance to a Utilities phase tick.
+            let mut output = engine.tick(); // tick 1 — construction completes
+            // Advance to next Utilities tick (tick % 4 == 1).
+            while engine.world.tick % 4 != 1 {
+                output = engine.tick();
+            }
+
+            assert!(
+                output.water_shortage_kl > 0,
+                "Expected water shortage with consumer but no pump, got water_shortage_kl={}",
+                output.water_shortage_kl
+            );
+        }
+
+        // Scenario B — no shortage: consumer with a pump of sufficient radius.
+        {
+            let world = WorldState::new(MapSize::new(32, 32), 42);
+            let mut registry = ArchetypeRegistry::new();
+            let road_graph = RoadGraph::new();
+
+            let consumer_id: ArchetypeId = 1;
+            let pump_id: ArchetypeId = 2;
+            registry.register(make_water_consumer_arch(consumer_id));
+            registry.register(make_water_pump_arch(pump_id));
+
+            let mut engine = SimulationEngine::new(world, registry, road_graph);
+
+            // Place the consumer.
+            engine
+                .apply_command(&Command::SetZoning {
+                    x: 5,
+                    y: 5,
+                    w: 1,
+                    h: 1,
+                    zone: ZoneType::Residential,
+                })
+                .unwrap();
+            engine
+                .apply_command(&Command::PlaceEntity {
+                    archetype_id: consumer_id,
+                    x: 5,
+                    y: 5,
+                    rotation: 0,
+                })
+                .unwrap();
+
+            // Place the pump adjacent (coverage_radius=20 easily reaches tile (5,5)).
+            engine
+                .apply_command(&Command::PlaceEntity {
+                    archetype_id: pump_id,
+                    x: 6,
+                    y: 5,
+                    rotation: 0,
+                })
+                .unwrap();
+
+            // Tick until construction completes then advance to a Utilities phase tick.
+            let mut output = engine.tick(); // tick 1 — both complete (build_time=1)
+            while engine.world.tick % 4 != 1 {
+                output = engine.tick();
+            }
+
+            assert_eq!(
+                output.water_shortage_kl, 0,
+                "Expected no water shortage with pump in place, got water_shortage_kl={}",
+                output.water_shortage_kl
+            );
+        }
+    }
 
     #[test]
     fn power_shortage_kw_reflects_deficit() {

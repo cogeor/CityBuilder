@@ -27,6 +27,8 @@ pub struct SimWorld<'a> {
     /// Unmet power demand in kW from the previous tick.
     pub power_shortage_kw: &'a mut u32,
     pub water_shortage: &'a mut bool,
+    /// Unmet water demand in kL from the previous tick.
+    pub water_shortage_kl: &'a mut u32,
     /// Phase wheel for gating expensive computation.
     pub phase_wheel: &'a PhaseWheel,
 }
