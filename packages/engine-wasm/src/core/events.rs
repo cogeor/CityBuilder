@@ -30,14 +30,16 @@ pub enum SimEvent {
     TrafficJam { location: TileCoord, density: u16 },
     MilestoneReached { milestone_id: u16 },
     CommandRejected { reason: String },
+    HealthCareShortage { deficit: u32 },
 }
 
 /// Utility type for shortage/restoration events.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum UtilityType {
-    Power = 0,
-    Water = 1,
+    Power      = 0,
+    Water      = 1,
+    HealthCare = 2,
 }
 
 /// Timestamped event wrapper.

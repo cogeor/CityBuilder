@@ -250,6 +250,8 @@ bitflags! {
         const UNDER_CONSTRUCTION = 1 << 3;
         const ON_FIRE            = 1 << 4;
         const DAMAGED            = 1 << 5;
+        /// Entity is within service radius of an active healthcare facility.
+        const HEALTH_COVERED     = 1 << 6;
     }
 }
 

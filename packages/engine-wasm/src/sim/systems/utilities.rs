@@ -226,6 +226,9 @@ where
             UtilityType::Water => {
                 events.publish(tick, SimEvent::WaterShortage { deficit });
             }
+            UtilityType::HealthCare => {
+                events.publish(tick, SimEvent::HealthCareShortage { deficit });
+            }
         }
     } else if prev_had_shortage {
         events.publish(tick, SimEvent::UtilityRestored { utility_type });
