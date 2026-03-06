@@ -220,6 +220,7 @@ pub fn tile_neighbors_4(
 /// Flat, row-major grid of `TileValue` cells.
 ///
 /// Indexing: `idx = y * width + x`.
+#[derive(Debug)]
 pub struct TileMap {
     tiles:  Vec<TileValue>,
     width:  u32,
@@ -322,6 +323,28 @@ impl TileMap {
     pub fn clear_flags(&mut self, x: u32, y: u32, flags: TileFlags) -> bool {
         if let Some(t) = self.get_mut(x, y) {
             t.flags.remove(flags);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Set the zone on the tile at `(x, y)`. Returns `false` if out of bounds.
+    #[inline]
+    pub fn set_zone(&mut self, x: u32, y: u32, zone: ZoneType) -> bool {
+        if let Some(t) = self.get_mut(x, y) {
+            t.zone = zone;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Set the terrain on the tile at `(x, y)`. Returns `false` if out of bounds.
+    #[inline]
+    pub fn set_terrain(&mut self, x: u32, y: u32, terrain: TerrainType) -> bool {
+        if let Some(t) = self.get_mut(x, y) {
+            t.terrain = terrain;
             true
         } else {
             false

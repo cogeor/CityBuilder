@@ -114,8 +114,12 @@ impl SimulationEngine {
         let queued: Vec<Command> = self.pending_commands.drain(..).collect();
         let mut invalidation_reasons: Vec<InvalidationReason> = Vec::new();
         for cmd in &queued {
-            if let Ok(effect) =
-                commands::apply_command_with_registry(&mut self.world, Some(&self.registry), cmd)
+            if let Ok(effect) = commands::apply_command_with_registry(
+                &mut self.world,
+                Some(&self.registry),
+                Some(&mut self.road_graph),
+                cmd,
+            )
             {
                 self.collect_command_diff(&mut diffs, &effect);
                 self.collect_invalidation_reason(&mut invalidation_reasons, &effect);
@@ -255,7 +259,12 @@ impl SimulationEngine {
     ///
     /// Delegates to `core::commands::apply_command`.
     pub fn apply_command(&mut self, cmd: &Command) -> CommandResult {
-        commands::apply_command_with_registry(&mut self.world, Some(&self.registry), cmd)
+        commands::apply_command_with_registry(
+            &mut self.world,
+            Some(&self.registry),
+            Some(&mut self.road_graph),
+            cmd,
+        )
     }
 
     fn collect_invalidation_reason(
@@ -271,7 +280,9 @@ impl SimulationEngine {
             CommandEffect::PolicyChanged { .. } => out.push(InvalidationReason::PolicyChanged),
             CommandEffect::EntityUpgraded { .. }
             | CommandEffect::EntityToggled { .. }
-            | CommandEffect::ZoningApplied { .. } => {}
+            | CommandEffect::ZoningApplied { .. }
+            | CommandEffect::TerrainApplied { .. }
+            | CommandEffect::RoadLineApplied { .. } => {}
         }
     }
 
@@ -316,7 +327,10 @@ impl SimulationEngine {
                     new_value: u32::from(*enabled),
                 });
             }
-            CommandEffect::TilesBulldozed { .. } | CommandEffect::ZoningApplied { .. } => {}
+            CommandEffect::TilesBulldozed { .. }
+            | CommandEffect::ZoningApplied { .. }
+            | CommandEffect::TerrainApplied { .. }
+            | CommandEffect::RoadLineApplied { .. } => {}
         }
     }
 }

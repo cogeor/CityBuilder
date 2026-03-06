@@ -57,7 +57,7 @@ pub fn tick_zoned_development_with_config(
 
         let x = rng.next_bounded(map.width as u32) as i16;
         let y = rng.next_bounded(map.height as u32) as i16;
-        let zone = match world.tiles.get(x, y) {
+        let zone = match if x < 0 || y < 0 { None } else { world.tiles.get(x as u32, y as u32) } {
             Some(tile) => tile.zone,
             None => continue,
         };
@@ -151,10 +151,10 @@ fn can_place_archetype(
         for dx in 0..def.footprint_w as i16 {
             let tx = x + dx;
             let ty = y + dy;
-            if !world.tiles.in_bounds(tx, ty) {
+            if tx < 0 || ty < 0 || !world.tiles.in_bounds(tx as u32, ty as u32) {
                 return false;
             }
-            let Some(tile) = world.tiles.get(tx, ty) else {
+            let Some(tile) = world.tiles.get(tx as u32, ty as u32) else {
                 return false;
             };
             if tile.zone != zone {

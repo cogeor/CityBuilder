@@ -5,8 +5,9 @@
 //! application; invalid commands are rejected with an error.
 
 use crate::core::archetypes::ArchetypeRegistry;
-use crate::core::world::{CityPolicies, WorldState};
 use crate::core::commands_spec;
+use crate::core::network::{RoadGraph, RoadType};
+use crate::core::world::{CityPolicies, WorldState};
 use crate::core_types::*;
 use serde::{Deserialize, Serialize};
 
@@ -46,6 +47,20 @@ pub enum Command {
         w: u8,
         h: u8,
         zone: ZoneType,
+    },
+    SetTerrain {
+        x: i16,
+        y: i16,
+        w: u8,
+        h: u8,
+        terrain: TerrainType,
+    },
+    SetRoadLine {
+        x0: i16,
+        y0: i16,
+        x1: i16,
+        y1: i16,
+        road_type: RoadType,
     },
 }
 
@@ -88,17 +103,20 @@ pub enum CommandEffect {
     TilesBulldozed { count: u32 },
     EntityToggled { handle: EntityHandle, enabled: bool },
     ZoningApplied { count: u32 },
+    TerrainApplied { count: u32 },
+    RoadLineApplied { count: u32 },
 }
 
 /// Apply a command to the world state after validation.
 pub fn apply_command(world: &mut WorldState, cmd: &Command) -> CommandResult {
-    apply_command_with_registry(world, None, cmd)
+    apply_command_with_registry(world, None, None, cmd)
 }
 
 /// Apply a command with registry-aware validation and footprint logic.
 pub fn apply_command_with_registry(
     world: &mut WorldState,
     registry: Option<&ArchetypeRegistry>,
+    road_graph: Option<&mut RoadGraph>,
     cmd: &Command,
 ) -> CommandResult {
     commands_spec::validate_command_with_registry(world, registry, cmd)?;
@@ -186,7 +204,11 @@ pub fn apply_command_with_registry(
             // Clear zoning in the rectangle
             for dy in 0..*h as i16 {
                 for dx in 0..*w as i16 {
-                    world.tiles.set_zone(*x + dx, *y + dy, ZoneType::None);
+                    let cx = *x + dx;
+                    let cy = *y + dy;
+                    if cx >= 0 && cy >= 0 {
+                        world.tiles.set_zone(cx as u32, cy as u32, ZoneType::None);
+                    }
                 }
             }
             Ok(CommandEffect::TilesBulldozed { count: removed })
@@ -204,14 +226,131 @@ pub fn apply_command_with_registry(
             let mut count = 0u32;
             for dy in 0..*h as i16 {
                 for dx in 0..*w as i16 {
-                    if world.tiles.set_zone(*x + dx, *y + dy, *zone) {
+                    let cx = *x + dx;
+                    let cy = *y + dy;
+                    if cx >= 0 && cy >= 0 && world.tiles.set_zone(cx as u32, cy as u32, *zone) {
                         count += 1;
                     }
                 }
             }
+            // City-builder UX default: larger zoning drags create collector roads
+            // on the rectangle perimeter to keep new districts connected.
+            if *w >= 4 && *h >= 4 {
+                let Some(road_graph) = road_graph else {
+                    return Ok(CommandEffect::ZoningApplied { count });
+                };
+                let x_min = *x;
+                let y_min = *y;
+                let x_max = *x + (*w as i16) - 1;
+                let y_max = *y + (*h as i16) - 1;
+                let road_type = RoadType::Local;
+
+                for tx in x_min..x_max {
+                    try_add_road_segment(world, road_graph, tx, y_min, tx + 1, y_min, road_type);
+                    try_add_road_segment(world, road_graph, tx, y_max, tx + 1, y_max, road_type);
+                }
+                for ty in y_min..y_max {
+                    try_add_road_segment(world, road_graph, x_min, ty, x_min, ty + 1, road_type);
+                    try_add_road_segment(world, road_graph, x_max, ty, x_max, ty + 1, road_type);
+                }
+            }
             Ok(CommandEffect::ZoningApplied { count })
         }
+        Command::SetTerrain {
+            x,
+            y,
+            w,
+            h,
+            terrain,
+        } => {
+            let mut count = 0u32;
+            for dy in 0..*h as i16 {
+                for dx in 0..*w as i16 {
+                    let cx = *x + dx;
+                    let cy = *y + dy;
+                    if cx >= 0 && cy >= 0 && world.tiles.set_terrain(cx as u32, cy as u32, *terrain) {
+                        count += 1;
+                    }
+                }
+            }
+            Ok(CommandEffect::TerrainApplied { count })
+        }
+        Command::SetRoadLine {
+            x0,
+            y0,
+            x1,
+            y1,
+            road_type,
+        } => {
+            let Some(road_graph) = road_graph else {
+                return Err(CommandError::ValidationFailed(
+                    "road graph unavailable".to_string(),
+                ));
+            };
+            let mut count = 0u32;
+            let mut prev = TileCoord::new(*x0, *y0);
+
+            if x0 == x1 {
+                let min_y = (*y0).min(*y1);
+                let max_y = (*y0).max(*y1);
+                for y in (min_y + 1)..=max_y {
+                    let next = TileCoord::new(*x0, y);
+                    if try_add_road_segment(
+                        world,
+                        road_graph,
+                        prev.x,
+                        prev.y,
+                        next.x,
+                        next.y,
+                        *road_type,
+                    ) {
+                        count += 1;
+                    }
+                    prev = next;
+                }
+            } else {
+                let min_x = (*x0).min(*x1);
+                let max_x = (*x0).max(*x1);
+                for x in (min_x + 1)..=max_x {
+                    let next = TileCoord::new(x, *y0);
+                    if try_add_road_segment(
+                        world,
+                        road_graph,
+                        prev.x,
+                        prev.y,
+                        next.x,
+                        next.y,
+                        *road_type,
+                    ) {
+                        count += 1;
+                    }
+                    prev = next;
+                }
+            }
+
+            Ok(CommandEffect::RoadLineApplied { count })
+        }
     }
+}
+
+fn try_add_road_segment(
+    world: &mut WorldState,
+    road_graph: &mut RoadGraph,
+    ax: i16,
+    ay: i16,
+    bx: i16,
+    by: i16,
+    road_type: RoadType,
+) -> bool {
+    if ax < 0 || ay < 0 || !world.tiles.in_bounds(ax as u32, ay as u32)
+        || bx < 0 || by < 0 || !world.tiles.in_bounds(bx as u32, by as u32)
+    {
+        return false;
+    }
+    if !world.is_buildable(ax, ay) || !world.is_buildable(bx, by) {
+        return false;
+    }
+    road_graph.add_segment(TileCoord::new(ax, ay), TileCoord::new(bx, by), road_type)
 }
 
 fn rects_overlap(
@@ -657,8 +796,8 @@ mod tests {
             _ => panic!("Expected ZoningApplied effect"),
         }
         // Verify all tiles in range are zoned
-        for dy in 0..3i16 {
-            for dx in 0..3i16 {
+        for dy in 0..3u32 {
+            for dx in 0..3u32 {
                 assert_eq!(
                     world.tiles.get(2 + dx, 2 + dy).unwrap().zone,
                     ZoneType::Residential

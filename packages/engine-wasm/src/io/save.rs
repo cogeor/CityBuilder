@@ -4,14 +4,15 @@
 //! No external serialization dependencies -- raw byte writing for full control.
 
 use crate::core::entity::EntityStore;
-use crate::core::world::{CityPolicies, Tile, TileGrid, WorldSeeds, WorldState};
+use crate::core::tilemap::{TileFlags, TileKind, TileMap, TileValue};
+use crate::core::world::{CityPolicies, WorldSeeds, WorldState};
 use crate::core_types::*;
 use std::fmt;
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 /// Current save format version.
-pub const SAVE_VERSION: u32 = 1;
+pub const SAVE_VERSION: u32 = 2;
 
 /// Magic bytes identifying a TownBuilder save file.
 const MAGIC: [u8; 4] = *b"TOWN";
@@ -84,8 +85,8 @@ pub struct SaveHeader {
 /// - Tile data (4 bytes per tile: terrain, elevation, zone, water)
 /// - Entity data (11 bytes per alive entity)
 pub fn serialize_world(world: &WorldState) -> Vec<u8> {
-    let map_w = world.tiles.width();
-    let map_h = world.tiles.height();
+    let map_w = world.tiles.width() as u16;
+    let map_h = world.tiles.height() as u16;
     let entity_count = world.entities.count();
     let name_bytes = world.city_name.as_bytes();
     let name_len = name_bytes.len().min(u16::MAX as usize) as u16;
@@ -120,13 +121,13 @@ pub fn serialize_world(world: &WorldState) -> Vec<u8> {
     buf.push(world.policies.transport_budget_pct);
 
     // ── Tile data (row-major: y then x) ──
-    for y in 0..map_h as i16 {
-        for x in 0..map_w as i16 {
+    for y in 0..map_h as u32 {
+        for x in 0..map_w as u32 {
             if let Some(tile) = world.tiles.get(x, y) {
                 buf.push(tile.terrain as u8);
-                buf.push(tile.elevation);
-                buf.push(tile.zone as u8);
-                buf.push(if tile.water { 1u8 } else { 0u8 });
+                buf.push(tile.kind   as u8);
+                buf.push(tile.zone   as u8);
+                buf.push(tile.flags.0);
             }
         }
     }
@@ -224,6 +225,19 @@ fn terrain_from_u8(v: u8) -> Result<TerrainType, SaveError> {
     }
 }
 
+fn kind_from_u8(b: u8) -> Result<TileKind, SaveError> {
+    match b {
+        0 => Ok(TileKind::Empty),
+        1 => Ok(TileKind::Road),
+        2 => Ok(TileKind::Zone),
+        3 => Ok(TileKind::Building),
+        4 => Ok(TileKind::Utility),
+        5 => Ok(TileKind::PowerLine),
+        6 => Ok(TileKind::WaterPipe),
+        _ => Err(SaveError::CorruptData(format!("unknown TileKind byte: {}", b))),
+    }
+}
+
 fn zone_from_u8(v: u8) -> Result<ZoneType, SaveError> {
     match v {
         0 => Ok(ZoneType::None),
@@ -289,20 +303,14 @@ pub fn deserialize_world(data: &[u8]) -> Result<WorldState, SaveError> {
         return Err(SaveError::InsufficientData);
     }
 
-    let mut tiles = TileGrid::new(size);
-    for y in 0..map_height as i16 {
-        for x in 0..map_width as i16 {
+    let mut tiles = TileMap::new(map_width as u32, map_height as u32);
+    for y in 0..map_height as u32 {
+        for x in 0..map_width as u32 {
             let terrain = terrain_from_u8(cursor.read_u8()?)?;
-            let elevation = cursor.read_u8()?;
-            let zone = zone_from_u8(cursor.read_u8()?)?;
-            let water_byte = cursor.read_u8()?;
-            let tile = Tile {
-                terrain,
-                elevation,
-                zone,
-                water: water_byte != 0,
-            };
-            tiles.set(x, y, tile);
+            let kind    = kind_from_u8(cursor.read_u8()?)?;
+            let zone    = zone_from_u8(cursor.read_u8()?)?;
+            let flags   = TileFlags(cursor.read_u8()?);
+            tiles.set(x, y, TileValue { terrain, kind, zone, flags });
         }
     }
 
@@ -584,35 +592,37 @@ mod tests {
 
     #[test]
     fn tile_data_round_trip() {
+        use crate::core::tilemap::{TileFlags, TileKind, TileValue};
+
         let mut world = make_test_world(4, 4, 1);
         world.tiles.set(
             0,
             0,
-            Tile {
+            TileValue {
                 terrain: TerrainType::Sand,
-                elevation: 10,
+                kind: TileKind::Zone,
                 zone: ZoneType::Commercial,
-                water: false,
+                flags: TileFlags::NONE,
             },
         );
         world.tiles.set(
             1,
             1,
-            Tile {
+            TileValue {
                 terrain: TerrainType::Water,
-                elevation: 0,
+                kind: TileKind::Empty,
                 zone: ZoneType::None,
-                water: true,
+                flags: TileFlags::NONE,
             },
         );
         world.tiles.set(
             3,
             3,
-            Tile {
+            TileValue {
                 terrain: TerrainType::Rock,
-                elevation: 255,
+                kind: TileKind::Zone,
                 zone: ZoneType::Industrial,
-                water: false,
+                flags: TileFlags::NONE,
             },
         );
 
@@ -621,21 +631,18 @@ mod tests {
 
         let t00 = restored.tiles.get(0, 0).unwrap();
         assert_eq!(t00.terrain, TerrainType::Sand);
-        assert_eq!(t00.elevation, 10);
         assert_eq!(t00.zone, ZoneType::Commercial);
-        assert!(!t00.water);
+        assert_eq!(t00.kind, TileKind::Zone);
 
         let t11 = restored.tiles.get(1, 1).unwrap();
         assert_eq!(t11.terrain, TerrainType::Water);
-        assert_eq!(t11.elevation, 0);
         assert_eq!(t11.zone, ZoneType::None);
-        assert!(t11.water);
+        assert_eq!(t11.kind, TileKind::Empty);
 
         let t33 = restored.tiles.get(3, 3).unwrap();
         assert_eq!(t33.terrain, TerrainType::Rock);
-        assert_eq!(t33.elevation, 255);
         assert_eq!(t33.zone, ZoneType::Industrial);
-        assert!(!t33.water);
+        assert_eq!(t33.kind, TileKind::Zone);
     }
 
     // ── Test 12: Header fields match world state ─────────────────────────

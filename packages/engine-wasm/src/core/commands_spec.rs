@@ -28,7 +28,9 @@ pub struct InBoundsSpec {
 
 impl CommandSpec for InBoundsSpec {
     fn check(&self, world: &WorldState) -> Result<(), CommandError> {
-        if world.tiles.in_bounds(self.x, self.y) {
+        if self.x >= 0 && self.y >= 0
+            && world.tiles.in_bounds(self.x as u32, self.y as u32)
+        {
             Ok(())
         } else {
             Err(CommandError::OutOfBounds)
@@ -108,9 +110,11 @@ impl CommandSpec for TileOccupiedSpec {
             }
         }
         // Also consider a tile with zoning as "occupied" for demolish purposes
-        if let Some(tile) = world.tiles.get(self.x, self.y) {
-            if tile.zone != ZoneType::None {
-                return Ok(());
+        if self.x >= 0 && self.y >= 0 {
+            if let Some(tile) = world.tiles.get(self.x as u32, self.y as u32) {
+                if tile.zone != ZoneType::None {
+                    return Ok(());
+                }
             }
         }
         Err(CommandError::ValidationFailed(
@@ -247,7 +251,7 @@ pub fn validate_command_with_registry(
                 for dx in 0..def.footprint_w as i16 {
                     let tx = *x + dx;
                     let ty = *y + dy;
-                    if !world.tiles.in_bounds(tx, ty) {
+                    if tx < 0 || ty < 0 || !world.tiles.in_bounds(tx as u32, ty as u32) {
                         return Err(CommandError::OutOfBounds);
                     }
                     if !world.is_buildable(tx, ty) {
@@ -261,7 +265,8 @@ pub fn validate_command_with_registry(
                     for dx in 0..def.footprint_w as i16 {
                         let tx = *x + dx;
                         let ty = *y + dy;
-                        let Some(tile) = world.tiles.get(tx, ty) else {
+                        // tx and ty are guaranteed >= 0 from the in_bounds loop above
+                        let Some(tile) = world.tiles.get(tx as u32, ty as u32) else {
                             return Err(CommandError::OutOfBounds);
                         };
                         if tile.zone != zone {
@@ -305,6 +310,17 @@ pub fn validate_command_with_registry(
         }
         Command::Bulldoze { x, y, .. } => zone_spec(*x, *y).check(world),
         Command::SetZoning { x, y, .. } => zone_spec(*x, *y).check(world),
+        Command::SetTerrain { x, y, .. } => zone_spec(*x, *y).check(world),
+        Command::SetRoadLine { x0, y0, x1, y1, .. } => {
+            zone_spec(*x0, *y0).check(world)?;
+            zone_spec(*x1, *y1).check(world)?;
+            if x0 != x1 && y0 != y1 {
+                return Err(CommandError::ValidationFailed(
+                    "road lines must be axis-aligned".to_string(),
+                ));
+            }
+            Ok(())
+        }
         Command::RemoveEntity { handle }
         | Command::UpgradeEntity { handle, .. }
         | Command::ToggleEntity { handle, .. } => {

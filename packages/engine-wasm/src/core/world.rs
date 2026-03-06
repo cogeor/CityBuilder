@@ -4,139 +4,9 @@
 //! tile grid, entities, policies, and seeds. Everything else is derived.
 
 use crate::core::entity::EntityStore;
+use crate::core::tilemap::TileMap;
 use crate::core_types::*;
 use serde::{Deserialize, Serialize};
-
-// ─── Tile ────────────────────────────────────────────────────────────────────
-
-/// Per-tile canonical data.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Tile {
-    pub terrain: TerrainType,
-    pub elevation: u8,
-    pub zone: ZoneType,
-    pub water: bool,
-}
-
-impl Tile {
-    pub const DEFAULT: Tile = Tile {
-        terrain: TerrainType::Grass,
-        elevation: 0,
-        zone: ZoneType::None,
-        water: false,
-    };
-}
-
-// ─── TileGrid ────────────────────────────────────────────────────────────────
-
-/// 2D grid of tiles indexed by (x, y).
-#[derive(Debug)]
-pub struct TileGrid {
-    tiles: Vec<Tile>,
-    width: u16,
-    height: u16,
-}
-
-impl TileGrid {
-    /// Create a new grid filled with default tiles.
-    pub fn new(size: MapSize) -> Self {
-        let count = size.area() as usize;
-        TileGrid {
-            tiles: vec![Tile::DEFAULT; count],
-            width: size.width,
-            height: size.height,
-        }
-    }
-
-    #[inline]
-    pub fn width(&self) -> u16 {
-        self.width
-    }
-
-    #[inline]
-    pub fn height(&self) -> u16 {
-        self.height
-    }
-
-    #[inline]
-    pub fn size(&self) -> MapSize {
-        MapSize::new(self.width, self.height)
-    }
-
-    /// Check if coordinates are within bounds.
-    #[inline]
-    pub fn in_bounds(&self, x: i16, y: i16) -> bool {
-        x >= 0 && y >= 0 && (x as u16) < self.width && (y as u16) < self.height
-    }
-
-    /// Convert (x, y) to linear index.
-    #[inline]
-    fn index(&self, x: i16, y: i16) -> usize {
-        (y as usize) * (self.width as usize) + (x as usize)
-    }
-
-    /// Get a tile at (x, y). Returns None if out of bounds.
-    #[inline]
-    pub fn get(&self, x: i16, y: i16) -> Option<&Tile> {
-        if self.in_bounds(x, y) {
-            Some(&self.tiles[self.index(x, y)])
-        } else {
-            None
-        }
-    }
-
-    /// Get a mutable reference to a tile.
-    #[inline]
-    pub fn get_mut(&mut self, x: i16, y: i16) -> Option<&mut Tile> {
-        if self.in_bounds(x, y) {
-            let idx = self.index(x, y);
-            Some(&mut self.tiles[idx])
-        } else {
-            None
-        }
-    }
-
-    /// Set a tile. Returns false if out of bounds.
-    pub fn set(&mut self, x: i16, y: i16, tile: Tile) -> bool {
-        if self.in_bounds(x, y) {
-            let idx = self.index(x, y);
-            self.tiles[idx] = tile;
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Set the zone type of a tile.
-    pub fn set_zone(&mut self, x: i16, y: i16, zone: ZoneType) -> bool {
-        if let Some(t) = self.get_mut(x, y) {
-            t.zone = zone;
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Set the terrain type of a tile.
-    pub fn set_terrain(&mut self, x: i16, y: i16, terrain: TerrainType) -> bool {
-        if let Some(t) = self.get_mut(x, y) {
-            t.terrain = terrain;
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Iterate over all tiles with their coordinates.
-    pub fn iter(&self) -> impl Iterator<Item = (i16, i16, &Tile)> {
-        let w = self.width as i16;
-        self.tiles.iter().enumerate().map(move |(i, t)| {
-            let x = (i as i16) % w;
-            let y = (i as i16) / w;
-            (x, y, t)
-        })
-    }
-}
 
 // ─── CityPolicies ────────────────────────────────────────────────────────────
 
@@ -192,7 +62,7 @@ impl WorldSeeds {
 /// The canonical world state. Contains everything needed for a save file.
 #[derive(Debug)]
 pub struct WorldState {
-    pub tiles: TileGrid,
+    pub tiles: TileMap,
     pub entities: EntityStore,
     pub policies: CityPolicies,
     pub seeds: WorldSeeds,
@@ -208,7 +78,7 @@ impl WorldState {
     /// Create a new world with the given map size and seed.
     pub fn new(size: MapSize, seed: u64) -> Self {
         WorldState {
-            tiles: TileGrid::new(size),
+            tiles: TileMap::new(size.width as u32, size.height as u32),
             entities: EntityStore::new(size.area() as usize),
             policies: CityPolicies::default(),
             seeds: WorldSeeds::new(seed),
@@ -221,13 +91,16 @@ impl WorldState {
     /// Get the map size.
     #[inline]
     pub fn map_size(&self) -> MapSize {
-        self.tiles.size()
+        MapSize::new(self.tiles.width() as u16, self.tiles.height() as u16)
     }
 
     /// Check if a tile position is buildable (in bounds, not water, no existing entity).
     pub fn is_buildable(&self, x: i16, y: i16) -> bool {
-        match self.tiles.get(x, y) {
-            Some(tile) => !tile.water && tile.terrain != TerrainType::Water,
+        if x < 0 || y < 0 {
+            return false;
+        }
+        match self.tiles.get(x as u32, y as u32) {
+            Some(tile) => tile.terrain != TerrainType::Water,
             None => false,
         }
     }
@@ -252,7 +125,7 @@ impl WorldState {
         y: i16,
         rotation: u8,
     ) -> Option<EntityHandle> {
-        if !self.tiles.in_bounds(x, y) {
+        if x < 0 || y < 0 || !self.tiles.in_bounds(x as u32, y as u32) {
             return None;
         }
         self.entities.alloc(archetype, x, y, rotation)
@@ -269,6 +142,7 @@ impl WorldState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::tilemap::{TileFlags, TileKind, TileMap, TileValue};
 
     // ── WorldState::new defaults ─────────────────────────────────────────
 
@@ -285,71 +159,68 @@ mod tests {
         assert_eq!(world.entities.count(), 0);
     }
 
-    // ── TileGrid: get/set, in_bounds ─────────────────────────────────────
+    // ── TileMap: get/set, in_bounds ──────────────────────────────────────
 
     #[test]
     fn tile_grid_get_set() {
-        let mut grid = TileGrid::new(MapSize::new(8, 8));
-        let tile = Tile {
+        let mut grid = TileMap::new(8, 8);
+        let tile = TileValue {
             terrain: TerrainType::Sand,
-            elevation: 5,
+            kind: TileKind::Empty,
             zone: ZoneType::Commercial,
-            water: false,
+            flags: TileFlags::NONE,
         };
         assert!(grid.set(3, 4, tile));
         let got = grid.get(3, 4).unwrap();
-        assert_eq!(*got, tile);
+        assert_eq!(got, tile);
     }
 
     #[test]
     fn tile_grid_in_bounds() {
-        let grid = TileGrid::new(MapSize::new(10, 20));
+        let grid = TileMap::new(10, 20);
         assert!(grid.in_bounds(0, 0));
         assert!(grid.in_bounds(9, 19));
         assert!(!grid.in_bounds(10, 0));
         assert!(!grid.in_bounds(0, 20));
-        assert!(!grid.in_bounds(-1, 0));
-        assert!(!grid.in_bounds(0, -1));
+        // Negative values are i16 and must be guarded before calling in_bounds
+        // (TileMap uses u32; negative i16 as u32 would be huge and thus out of bounds)
     }
 
     #[test]
     fn tile_grid_zone_setting() {
-        let mut grid = TileGrid::new(MapSize::new(8, 8));
+        let mut grid = TileMap::new(8, 8);
         assert!(grid.set_zone(2, 3, ZoneType::Residential));
         assert_eq!(grid.get(2, 3).unwrap().zone, ZoneType::Residential);
     }
 
     #[test]
     fn tile_grid_terrain_setting() {
-        let mut grid = TileGrid::new(MapSize::new(8, 8));
+        let mut grid = TileMap::new(8, 8);
         assert!(grid.set_terrain(1, 1, TerrainType::Forest));
         assert_eq!(grid.get(1, 1).unwrap().terrain, TerrainType::Forest);
     }
 
-    // ── TileGrid: out of bounds returns None ─────────────────────────────
+    // ── TileMap: out of bounds returns None ──────────────────────────────
 
     #[test]
     fn tile_grid_out_of_bounds_returns_none() {
-        let grid = TileGrid::new(MapSize::new(4, 4));
+        let grid = TileMap::new(4, 4);
         assert!(grid.get(4, 0).is_none());
         assert!(grid.get(0, 4).is_none());
-        assert!(grid.get(-1, 0).is_none());
-        assert!(grid.get(0, -1).is_none());
     }
 
     #[test]
     fn tile_grid_set_out_of_bounds_returns_false() {
-        let mut grid = TileGrid::new(MapSize::new(4, 4));
-        assert!(!grid.set(10, 10, Tile::DEFAULT));
-        assert!(!grid.set_zone(-1, 0, ZoneType::Industrial));
-        assert!(!grid.set_terrain(0, -1, TerrainType::Rock));
+        let mut grid = TileMap::new(4, 4);
+        assert!(!grid.set(10, 10, TileValue::DEFAULT));
+        assert!(!grid.set_zone(u32::MAX, 0, ZoneType::Industrial));
+        assert!(!grid.set_terrain(0, u32::MAX, TerrainType::Rock));
     }
 
     #[test]
     fn tile_grid_get_mut_out_of_bounds_returns_none() {
-        let mut grid = TileGrid::new(MapSize::new(4, 4));
+        let mut grid = TileMap::new(4, 4);
         assert!(grid.get_mut(4, 0).is_none());
-        assert!(grid.get_mut(-1, -1).is_none());
     }
 
     // ── CityPolicies default values ──────────────────────────────────────
@@ -384,16 +255,14 @@ mod tests {
     }
 
     #[test]
-    fn is_buildable_water_flag() {
+    fn is_buildable_water_tile_by_terrain() {
+        // The old water flag is gone; only terrain == Water matters.
+        // Verify that a Water terrain tile is not buildable.
         let mut world = WorldState::new(MapSize::new(8, 8), 1);
-        let tile = Tile {
-            terrain: TerrainType::Grass,
-            elevation: 0,
-            zone: ZoneType::None,
-            water: true,
-        };
-        world.tiles.set(3, 3, tile);
+        world.tiles.set_terrain(3, 3, TerrainType::Water);
         assert!(!world.is_buildable(3, 3));
+        // And a Grass terrain tile is buildable.
+        assert!(world.is_buildable(4, 4));
     }
 
     #[test]
@@ -495,14 +364,14 @@ mod tests {
 
     #[test]
     fn tile_iteration_covers_all_tiles() {
-        let grid = TileGrid::new(MapSize::new(4, 3));
+        let grid = TileMap::new(4, 3);
         let tiles: Vec<_> = grid.iter().collect();
         assert_eq!(tiles.len(), 12);
     }
 
     #[test]
     fn tile_iteration_correct_coordinates() {
-        let grid = TileGrid::new(MapSize::new(3, 2));
+        let grid = TileMap::new(3, 2);
         let tiles: Vec<_> = grid.iter().collect();
         // Row-major: (0,0),(1,0),(2,0),(0,1),(1,1),(2,1)
         assert_eq!(tiles[0].0, 0);
@@ -519,31 +388,34 @@ mod tests {
 
     #[test]
     fn tile_iteration_reflects_modifications() {
-        let mut grid = TileGrid::new(MapSize::new(4, 4));
+        let mut grid = TileMap::new(4, 4);
         grid.set_zone(2, 1, ZoneType::Industrial);
         let tile = grid.iter().find(|&(x, y, _)| x == 2 && y == 1).unwrap();
         assert_eq!(tile.2.zone, ZoneType::Industrial);
     }
 
-    // ── TileGrid width/height/size ───────────────────────────────────────
+    // ── TileMap width/height/size ─────────────────────────────────────────
 
     #[test]
     fn tile_grid_dimensions() {
-        let grid = TileGrid::new(MapSize::new(32, 64));
+        let grid = TileMap::new(32, 64);
         assert_eq!(grid.width(), 32);
         assert_eq!(grid.height(), 64);
-        assert_eq!(grid.size(), MapSize::new(32, 64));
+        assert_eq!(
+            MapSize::new(grid.width() as u16, grid.height() as u16),
+            MapSize::new(32, 64)
+        );
     }
 
-    // ── Tile::DEFAULT ────────────────────────────────────────────────────
+    // ── TileValue::DEFAULT ───────────────────────────────────────────────
 
     #[test]
     fn tile_default_values() {
-        let t = Tile::DEFAULT;
+        let t = TileValue::DEFAULT;
         assert_eq!(t.terrain, TerrainType::Grass);
-        assert_eq!(t.elevation, 0);
+        assert_eq!(t.kind, TileKind::Empty);
         assert_eq!(t.zone, ZoneType::None);
-        assert!(!t.water);
+        assert!(t.flags.is_empty());
     }
 
     // ── WorldSeeds ───────────────────────────────────────────────────────
@@ -562,13 +434,13 @@ mod tests {
         assert_eq!(world.map_size(), MapSize::new(100, 50));
     }
 
-    // ── TileGrid new fills with defaults ─────────────────────────────────
+    // ── TileMap new fills with defaults ──────────────────────────────────
 
     #[test]
     fn tile_grid_new_all_default() {
-        let grid = TileGrid::new(MapSize::new(4, 4));
+        let grid = TileMap::new(4, 4);
         for (_, _, tile) in grid.iter() {
-            assert_eq!(*tile, Tile::DEFAULT);
+            assert_eq!(tile, TileValue::DEFAULT);
         }
     }
 }

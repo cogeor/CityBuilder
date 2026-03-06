@@ -5,7 +5,8 @@
 //! Floating-point types are used here because this is render output, not sim.
 
 use crate::core::entity::EntityStore;
-use crate::core::world::{TileGrid, WorldState};
+use crate::core::tilemap::TileMap;
+use crate::core::world::WorldState;
 use crate::core_types::*;
 
 // ─── RenderFlags ────────────────────────────────────────────────────────────
@@ -115,17 +116,17 @@ fn tile_to_screen(x: i16, y: i16) -> (f32, f32) {
 /// - sprite_id mapped from terrain type
 /// - isometric screen position
 /// - z_order = y * width + x (painter's order, back-to-front)
-pub fn build_terrain_instances(tiles: &TileGrid) -> Vec<RenderInstance> {
-    let w = tiles.width() as u32;
+pub fn build_terrain_instances(tiles: &TileMap) -> Vec<RenderInstance> {
+    let w = tiles.width();
     let mut instances = Vec::with_capacity((tiles.width() as usize) * (tiles.height() as usize));
 
     for (x, y, tile) in tiles.iter() {
-        let (sx, sy) = tile_to_screen(x, y);
+        let (sx, sy) = tile_to_screen(x as i16, y as i16);
         let mut inst = RenderInstance::default_visible();
         inst.sprite_id = tile.terrain as u16;
         inst.screen_x = sx;
         inst.screen_y = sy;
-        inst.z_order = (y as u32) * w + (x as u32);
+        inst.z_order = y * w + x;
         instances.push(inst);
     }
 
@@ -285,7 +286,7 @@ impl ChunkDirtyTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::world::TileGrid;
+    use crate::core::tilemap::TileMap;
     use std::mem;
 
     // ── RenderInstance size ──────────────────────────────────────────────
@@ -299,14 +300,14 @@ mod tests {
 
     #[test]
     fn terrain_instances_generated_for_each_tile() {
-        let grid = TileGrid::new(MapSize::new(4, 3));
+        let grid = TileMap::new(4, 3);
         let instances = build_terrain_instances(&grid);
         assert_eq!(instances.len(), 12); // 4 * 3
     }
 
     #[test]
     fn terrain_instance_sprite_id_matches_terrain_type() {
-        let mut grid = TileGrid::new(MapSize::new(2, 1));
+        let mut grid = TileMap::new(2, 1);
         grid.set_terrain(1, 0, TerrainType::Forest);
 
         let instances = build_terrain_instances(&grid);
@@ -316,7 +317,7 @@ mod tests {
 
     #[test]
     fn terrain_z_order_correct() {
-        let grid = TileGrid::new(MapSize::new(4, 3));
+        let grid = TileMap::new(4, 3);
         let instances = build_terrain_instances(&grid);
         // Tile (0,0) -> z_order = 0*4 + 0 = 0
         assert_eq!(instances[0].z_order, 0);
@@ -330,7 +331,7 @@ mod tests {
 
     #[test]
     fn terrain_instance_screen_position() {
-        let grid = TileGrid::new(MapSize::new(4, 4));
+        let grid = TileMap::new(4, 4);
         let instances = build_terrain_instances(&grid);
 
         // Tile (0,0): screen_x = 0, screen_y = 0
@@ -348,7 +349,7 @@ mod tests {
 
     #[test]
     fn terrain_instances_all_visible() {
-        let grid = TileGrid::new(MapSize::new(3, 3));
+        let grid = TileMap::new(3, 3);
         let instances = build_terrain_instances(&grid);
         for inst in &instances {
             assert!(inst.render_flags & RenderFlags::VISIBLE != 0);
