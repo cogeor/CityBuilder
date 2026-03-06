@@ -263,3 +263,22 @@ export function validateArchetype(archetype: ArchetypeDefinition): string[] {
     errors.push("Usable ratio must be (0, 1]");
   return errors;
 }
+
+// ---- Plugin Manifest ----
+
+/** Canonical plugin manifest for base.buildings (runtime: "data"). */
+export const BASE_BUILDINGS_MANIFEST = {
+  schema_version: "v1" as const,
+  source_format: "canonical_v1" as const,
+  id: "base.buildings",
+  name: "Base Buildings",
+  version: "1.0.0",
+  description: "Core city-builder archetypes: residential, commercial, industrial, utility.",
+  author: "TownBuilder",
+  dependencies: [] as string[],
+  activation: "startup" as const,
+  runtime: "data" as const,
+  contributes: {
+    buildings: BASE_BUILDINGS.map((a) => String(a.id)),
+  },
+};

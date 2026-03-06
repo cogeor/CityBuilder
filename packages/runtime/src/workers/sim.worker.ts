@@ -71,11 +71,12 @@ function parseCommandResult(raw: string | boolean): { success: boolean; error?: 
   if (typeof raw === "boolean") {
     return { success: raw };
   }
-  const parsed = JSON.parse(raw) as { ok?: string; error?: string };
+  // ok is now a structured JSON object (e.g. {"EntityPlaced":{...}}), not a string.
+  const parsed = JSON.parse(raw) as { ok?: unknown; error?: string };
   if (parsed.error) {
     return { success: false, error: parsed.error };
   }
-  return { success: typeof parsed.ok === "string" };
+  return { success: parsed.ok !== undefined };
 }
 
 async function loadWasmModule(): Promise<WasmModuleLike> {
@@ -110,6 +111,9 @@ export class SimWorker {
       case MessageType.HANDSHAKE: {
         try {
           await this.initGame(msg.seed ?? 0, msg.width ?? 128, msg.height ?? 128);
+          // Start ticking at normal speed immediately after init.
+          // Callers can send SET_SPEED:PAUSED to suppress ticking.
+          this.setSpeed(SimSpeed.NORMAL);
           this.postResponse({
             type: MessageType.HANDSHAKE_ACK,
             wire_version: WIRE_VERSION,
