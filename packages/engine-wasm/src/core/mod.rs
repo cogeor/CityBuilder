@@ -14,5 +14,6 @@ pub mod network;
 pub mod region;
 pub mod scale;
 pub mod stats_recorder;
+pub mod tile_constants;
 pub mod tilemap;
 pub mod world;
