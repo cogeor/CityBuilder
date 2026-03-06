@@ -17,7 +17,7 @@ use crate::core::entity::EntityStore;
 use crate::core::events::{EventBus, SimEvent, UtilityType};
 use crate::core::world::WorldState;
 use crate::core_types::*;
-pub use crate::sim::systems::utilities::UtilityBalance;
+pub use crate::sim::systems::utilities::{UtilityBalance, UtilityDistributeScratch};
 
 // ─── UtilitySystem trait ──────────────────────────────────────────────────────
 
@@ -130,6 +130,9 @@ impl UtilitySystem for ElectricitySystem {
 pub struct WaterSystem {
     last_balance: UtilityBalance,
     prev_shortage: bool,
+    /// Pre-allocated scratch buffers so `tick_water` makes zero heap allocations
+    /// per call after the first tick.
+    scratch: UtilityDistributeScratch,
 }
 
 impl WaterSystem {
@@ -137,6 +140,7 @@ impl WaterSystem {
         WaterSystem {
             last_balance: UtilityBalance { supply: 0, demand: 0, satisfied: 0, unsatisfied: 0 },
             prev_shortage: false,
+            scratch: UtilityDistributeScratch::default(),
         }
     }
 }
@@ -154,7 +158,7 @@ impl UtilitySystem for WaterSystem {
     ) -> UtilityBalance {
         use crate::sim::systems::utilities::{compute_water_coverage, tick_water};
         let state = compute_water_coverage(world, registry);
-        let balance = tick_water(&mut world.entities, registry, events, tick, prev_shortage);
+        let balance = tick_water(&mut world.entities, registry, events, tick, prev_shortage, &mut self.scratch);
         self.last_balance = UtilityBalance {
             supply: state.total_supply,
             demand: state.total_demand,

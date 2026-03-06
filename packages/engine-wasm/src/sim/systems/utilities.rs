@@ -46,6 +46,21 @@ enum AllocPriority {
     Other = 4,
 }
 
+/// Number of priority tiers — matches `AllocPriority` variant count.
+const PRIORITY_BUCKETS: usize = 5;
+
+/// Pre-allocated scratch buffers for zero-allocation utility distribution.
+///
+/// Store one instance per utility system (e.g. as a field on `ElectricitySystem`
+/// or `WaterSystem`) and pass a mutable reference to `tick_power`/`tick_water`
+/// each tick. Bucket Vecs grow on the first call and remain allocated thereafter.
+#[derive(Debug, Default)]
+pub struct UtilityDistributeScratch {
+    /// One bucket per `AllocPriority`, ordered Civic → Residential → Commercial →
+    /// Industrial → Other. Cleared at the start of every `distribute_utility` call.
+    buckets: [Vec<(EntityHandle, u32)>; PRIORITY_BUCKETS],
+}
+
 /// Determine allocation priority from archetype tags.
 fn entity_priority(
     entities: &EntityStore,
@@ -77,12 +92,17 @@ fn entity_priority(
 
 /// Distribute power to all active (non-under-construction) entities.
 /// Updates POWERED status flag on each entity.
+///
+/// `scratch` holds pre-allocated priority buckets so no heap allocation occurs
+/// after the first call. Pass a persistent `UtilityDistributeScratch` stored on
+/// the calling utility system to achieve zero per-tick allocations.
 pub fn tick_power(
     entities: &mut EntityStore,
     registry: &ArchetypeRegistry,
     events: &mut EventBus,
     tick: Tick,
     prev_had_shortage: bool,
+    scratch: &mut UtilityDistributeScratch,
 ) -> UtilityBalance {
     distribute_utility(
         entities,
@@ -94,17 +114,21 @@ pub fn tick_power(
         |def, level| def.power_supply_kw * level_multiplier(level) / 100,
         |def, level| def.power_demand_at_level(level),
         StatusFlags::POWERED,
+        scratch,
     )
 }
 
 /// Distribute water to all active entities.
 /// Updates HAS_WATER status flag on each entity.
+///
+/// `scratch` holds pre-allocated priority buckets. See `tick_power` docs.
 pub fn tick_water(
     entities: &mut EntityStore,
     registry: &ArchetypeRegistry,
     events: &mut EventBus,
     tick: Tick,
     prev_had_shortage: bool,
+    scratch: &mut UtilityDistributeScratch,
 ) -> UtilityBalance {
     distribute_utility(
         entities,
@@ -116,6 +140,7 @@ pub fn tick_water(
         |def, level| def.water_supply * level_multiplier(level) / 100,
         |def, _level| def.water_demand,
         StatusFlags::HAS_WATER,
+        scratch,
     )
 }
 
@@ -124,7 +149,13 @@ fn level_multiplier(level: u8) -> u32 {
     100 + (level.saturating_sub(1) as u32) * 20
 }
 
-/// Generic utility distribution.
+/// Generic utility distribution — zero heap allocation per call after the first.
+///
+/// # Algorithm
+/// **Pass 1** (supply scan): iterate all alive entities, accumulate `total_supply`,
+/// bucket-sort consumers into `scratch.buckets[priority]` (no Vec sort).
+/// **Pass 2** (allocation): drain buckets Civic→Other, set `satisfied_flag` /
+/// clear it inline — no separate `satisfied_handles`/`unsatisfied_handles` Vecs.
 fn distribute_utility<S, D>(
     entities: &mut EntityStore,
     registry: &ArchetypeRegistry,
@@ -135,28 +166,28 @@ fn distribute_utility<S, D>(
     supply_fn: S,
     demand_fn: D,
     satisfied_flag: StatusFlags,
+    scratch: &mut UtilityDistributeScratch,
 ) -> UtilityBalance
 where
     S: Fn(&crate::core::archetypes::ArchetypeDefinition, u8) -> u32,
     D: Fn(&crate::core::archetypes::ArchetypeDefinition, u8) -> u32,
 {
-    // Collect all active entities (not under construction).
-    let active: Vec<EntityHandle> = entities
-        .iter_alive()
-        .filter(|h| {
-            let flags = entities.get_flags(*h).unwrap_or(StatusFlags::NONE);
-            !flags.contains(StatusFlags::UNDER_CONSTRUCTION)
-        })
-        .collect();
+    // Clear buckets (O(1) per bucket, no allocation).
+    for bucket in &mut scratch.buckets {
+        bucket.clear();
+    }
 
-    // Calculate total supply and demand.
+    // Pass 1: compute total supply and fill priority buckets.
+    // No `active: Vec` collect — iterate iter_alive() directly.
     let mut total_supply: u32 = 0;
     let mut total_demand: u32 = 0;
 
-    // Entities requesting utility, sorted by priority.
-    let mut consumers: Vec<(EntityHandle, u32, AllocPriority)> = Vec::new();
+    for handle in entities.iter_alive() {
+        let flags = entities.get_flags(handle).unwrap_or(StatusFlags::NONE);
+        if flags.contains(StatusFlags::UNDER_CONSTRUCTION) {
+            continue;
+        }
 
-    for &handle in &active {
         let arch_id = match entities.get_archetype(handle) {
             Some(id) => id,
             None => continue,
@@ -175,47 +206,38 @@ where
 
         if demand > 0 {
             let priority = entity_priority(entities, registry, handle);
-            consumers.push((handle, demand, priority));
+            scratch.buckets[priority as usize].push((handle, demand));
             total_demand += demand;
         }
     }
 
-    // Sort consumers by priority (lower = higher priority).
-    consumers.sort_by_key(|&(_, _, p)| p);
-
-    // Allocate supply to consumers.
+    // Pass 2: allocate supply in priority order, set flags inline.
+    // No `satisfied_handles`/`unsatisfied_handles` Vecs needed.
     let mut remaining_supply = total_supply;
     let mut satisfied_count: u32 = 0;
     let mut unsatisfied_count: u32 = 0;
-    let mut satisfied_handles: Vec<EntityHandle> = Vec::new();
-    let mut unsatisfied_handles: Vec<EntityHandle> = Vec::new();
 
-    for (handle, demand, _) in &consumers {
-        if remaining_supply >= *demand {
-            remaining_supply -= *demand;
-            satisfied_handles.push(*handle);
-            satisfied_count += 1;
-        } else {
-            unsatisfied_handles.push(*handle);
-            unsatisfied_count += 1;
+    for bucket in &scratch.buckets {
+        for &(handle, demand) in bucket {
+            let got_supply = remaining_supply >= demand;
+            if got_supply {
+                remaining_supply -= demand;
+                satisfied_count += 1;
+            } else {
+                unsatisfied_count += 1;
+            }
+            if let Some(mut flags) = entities.get_flags(handle) {
+                if got_supply {
+                    flags.insert(satisfied_flag);
+                } else {
+                    flags.remove(satisfied_flag);
+                }
+                entities.set_flags(handle, flags);
+            }
         }
     }
 
-    // Update flags.
-    for handle in &satisfied_handles {
-        if let Some(mut flags) = entities.get_flags(*handle) {
-            flags.insert(satisfied_flag);
-            entities.set_flags(*handle, flags);
-        }
-    }
-    for handle in &unsatisfied_handles {
-        if let Some(mut flags) = entities.get_flags(*handle) {
-            flags.remove(satisfied_flag);
-            entities.set_flags(*handle, flags);
-        }
-    }
-
-    // Emit events.
+    // Emit shortage / restoration events.
     let has_shortage = total_demand > total_supply;
     if has_shortage {
         let deficit = total_demand - total_supply;
@@ -447,7 +469,7 @@ mod tests {
         let h1 = make_active_entity(&mut entities, 2, 1); // house 1
         let h2 = make_active_entity(&mut entities, 2, 2); // house 2
 
-        let balance = tick_power(&mut entities, &registry, &mut events, 0, false);
+        let balance = tick_power(&mut entities, &registry, &mut events, 0, false, &mut UtilityDistributeScratch::default());
 
         assert_eq!(balance.supply, 1000);
         assert_eq!(balance.demand, 10);
@@ -492,7 +514,7 @@ mod tests {
         let civic = make_active_entity(&mut entities, 2, 1);
         let industrial = make_active_entity(&mut entities, 3, 2);
 
-        let balance = tick_power(&mut entities, &registry, &mut events, 0, false);
+        let balance = tick_power(&mut entities, &registry, &mut events, 0, false, &mut UtilityDistributeScratch::default());
 
         assert_eq!(balance.supply, 10);
         assert_eq!(balance.demand, 15);
@@ -535,7 +557,7 @@ mod tests {
         make_active_entity(&mut entities, 1, 0);
         let h = make_active_entity(&mut entities, 2, 1);
 
-        let balance = tick_water(&mut entities, &registry, &mut events, 0, false);
+        let balance = tick_water(&mut entities, &registry, &mut events, 0, false, &mut UtilityDistributeScratch::default());
 
         assert_eq!(balance.supply, 100);
         assert_eq!(balance.demand, 2);
@@ -564,7 +586,7 @@ mod tests {
         // This entity is still under construction (default).
         let h = entities.alloc(2, 1, 0, 0).unwrap();
 
-        let balance = tick_power(&mut entities, &registry, &mut events, 0, false);
+        let balance = tick_power(&mut entities, &registry, &mut events, 0, false, &mut UtilityDistributeScratch::default());
 
         // Under-construction entity shouldn't count as demand.
         assert_eq!(balance.demand, 0);
@@ -587,7 +609,7 @@ mod tests {
         let h = make_active_entity(&mut entities, 1, 0);
         entities.set_enabled(h, false);
 
-        let balance = tick_power(&mut entities, &registry, &mut events, 0, false);
+        let balance = tick_power(&mut entities, &registry, &mut events, 0, false, &mut UtilityDistributeScratch::default());
 
         // Disabled power plant provides no supply.
         assert_eq!(balance.supply, 0);
@@ -608,7 +630,7 @@ mod tests {
         make_active_entity(&mut entities, 1, 0);
 
         // No consumers, supply > 0, prev had shortage -> emit restored.
-        let balance = tick_power(&mut entities, &registry, &mut events, 0, true);
+        let balance = tick_power(&mut entities, &registry, &mut events, 0, true, &mut UtilityDistributeScratch::default());
 
         assert!(!balance.has_shortage());
         let drained = events.drain();
@@ -636,7 +658,7 @@ mod tests {
         make_active_entity(&mut entities, 1, 0);
 
         // No shortage now, no shortage before -> no events.
-        tick_power(&mut entities, &registry, &mut events, 0, false);
+        tick_power(&mut entities, &registry, &mut events, 0, false, &mut UtilityDistributeScratch::default());
         assert!(events.is_empty());
     }
 
@@ -654,7 +676,7 @@ mod tests {
 
         make_active_entity(&mut entities, 1, 0);
 
-        let balance = tick_power(&mut entities, &registry, &mut events, 0, false);
+        let balance = tick_power(&mut entities, &registry, &mut events, 0, false, &mut UtilityDistributeScratch::default());
 
         assert_eq!(balance.supply, 0);
         assert_eq!(balance.demand, 5);
@@ -668,7 +690,7 @@ mod tests {
         let registry = ArchetypeRegistry::new();
         let mut events = EventBus::new();
 
-        let balance = tick_power(&mut entities, &registry, &mut events, 0, false);
+        let balance = tick_power(&mut entities, &registry, &mut events, 0, false, &mut UtilityDistributeScratch::default());
 
         assert_eq!(balance.supply, 0);
         assert_eq!(balance.demand, 0);
