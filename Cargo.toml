@@ -20,5 +20,14 @@ city_engine = { path = "crates/city_engine" }
 city_render = { path = "crates/city_render" }
 
 [profile.release]
+# opt-level = "z" for smallest WASM binary (best I-cache / JIT); use opt-level = 3
+# for maximum throughput on native targets. Keeping 2 as a balanced default.
 opt-level = 2
 lto = true
+codegen-units = 1  # required for LTO to inline across crates
+
+[profile.bench]
+# Use opt-level 3 for criterion benchmarks to avoid artificial throttling.
+opt-level = 3
+lto = true
+codegen-units = 1

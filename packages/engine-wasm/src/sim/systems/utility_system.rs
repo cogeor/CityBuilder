@@ -202,11 +202,13 @@ impl HealthCareSystem {
         }
     }
 
-    fn rebuild_coverage(
+    /// Repopulate `self.hospital_coverage` in-place (reuses allocation).
+    fn rebuild_coverage_in_place(
+        coverage: &mut Vec<(TileCoord, u8)>,
         entities: &EntityStore,
         registry: &ArchetypeRegistry,
-    ) -> Vec<(TileCoord, u8)> {
-        let mut out = Vec::new();
+    ) {
+        coverage.clear();
         for handle in entities.iter_alive() {
             let flags = match entities.get_flags(handle) {
                 Some(f) => f,
@@ -229,11 +231,10 @@ impl HealthCareSystem {
                 && (def.has_tag(ArchetypeTag::Service) || def.tags.iter().any(|t| format!("{t:?}") == "Civic"))
             {
                 if let Some(pos) = entities.get_pos(handle) {
-                    out.push((pos, def.service_radius));
+                    coverage.push((pos, def.service_radius));
                 }
             }
         }
-        out
     }
 }
 
@@ -248,7 +249,7 @@ impl UtilitySystem for HealthCareSystem {
         tick: Tick,
         prev_shortage: bool,
     ) -> UtilityBalance {
-        self.hospital_coverage = Self::rebuild_coverage(&world.entities, registry);
+        Self::rebuild_coverage_in_place(&mut self.hospital_coverage, &world.entities, registry);
 
         // Compute total bed capacity (job_capacity proxies hospital beds).
         let mut beds: u32 = 0;
