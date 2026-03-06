@@ -14,7 +14,9 @@ use crate::core::network::RoadGraph;
 use crate::core::world::WorldState;
 use crate::core_types::*;
 use crate::math::rng::Rng;
+use crate::caches::analysis_maps::AnalysisMaps;
 use crate::caches::cache_manager::{CacheManager, InvalidationReason};
+use crate::sim::systems::effects::{propagate_effects, compute_crime_map, EffectMap};
 use crate::sim::phase_wheel::PhaseWheel;
 use crate::sim::plugin::{SimulationPlugin, SimWorld};
 use crate::sim::plugins::{
@@ -70,6 +72,10 @@ pub struct SimulationEngine {
     pub population: u32,
     /// Registry of utility simulation systems (electricity, water, healthcare).
     pub utilities: UtilityRegistry,
+    /// Spatial effect overlay maps (pollution, crime, land value, etc.).
+    pub effect_map: EffectMap,
+    /// Derived analysis overlays — rebuilt from EffectMap on the Effects phase.
+    pub analysis_maps: AnalysisMaps,
     /// Queue of commands applied during phase 1 of the next tick.
     pub pending_commands: Vec<Command>,
     /// Cache dirty tracking and invalidation map.
@@ -94,6 +100,9 @@ impl SimulationEngine {
         utilities.register(WaterSystem::new());
         utilities.register(HealthCareSystem::new());
 
+        let map_w = map_size.width as u32;
+        let map_h = map_size.height as u32;
+
         SimulationEngine {
             world,
             registry,
@@ -105,6 +114,8 @@ impl SimulationEngine {
             city_event_state: CityEventState::new(),
             population: 0,
             utilities,
+            effect_map: EffectMap::new(map_w, map_h),
+            analysis_maps: AnalysisMaps::new(map_size.width, map_size.height),
             pending_commands: Vec::new(),
             cache_manager: CacheManager::new(),
             plugins: vec![
@@ -184,6 +195,20 @@ impl SimulationEngine {
             &mut self.events,
             tick,
         );
+
+        // Phase 3c: rebuild overlay effect maps (every 4 ticks, Utilities phase).
+        use crate::sim::phase_wheel::Phase;
+        if self.phase_wheel.should_run_expensive(tick, Phase::Utilities) {
+            propagate_effects(&mut self.effect_map, &self.world.entities, &self.registry);
+            // Build a land-value slice from current analysis_maps for the crime formula.
+            let lv_len = self.effect_map.len();
+            let land_value: Vec<i16> = (0..lv_len)
+                .map(|i| self.analysis_maps.land_value.get_by_index(i) as i16)
+                .collect();
+            let pop_density: Vec<u16> = vec![0u16; lv_len]; // placeholder; will be per-tile later
+            compute_crime_map(&mut self.effect_map, &land_value, &pop_density);
+            self.analysis_maps.rebuild_from_effects(&self.effect_map);
+        }
 
         // 11. Adapt phase wheel (placeholder: 0 microseconds measured).
         self.phase_wheel.adapt(0);

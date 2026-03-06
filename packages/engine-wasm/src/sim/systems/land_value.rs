@@ -21,6 +21,12 @@ pub struct LandValueInputs {
 }
 
 /// Trait for pluggable land value computation.
+///
+/// # Deprecated
+/// Use `AnalysisMaps::rebuild_from_effects` + `EffectMap` (effects.rs) instead.
+/// This trait is retained for backwards compatibility but is no longer driven
+/// by the simulation tick loop.
+#[deprecated(note = "Use AnalysisMaps::rebuild_from_effects with EffectMap instead")]
 pub trait ILandValueModel {
     fn compute(&self, inputs: &LandValueInputs) -> u16;
     fn name(&self) -> &str;

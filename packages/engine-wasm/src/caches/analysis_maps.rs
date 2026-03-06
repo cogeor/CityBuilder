@@ -4,9 +4,10 @@
 //! (value + 32768) to store signed i16 values in unsigned storage.
 //! Land value is a composite derived from desirability, pollution, crime, and noise.
 
-use crate::core::archetypes::ArchetypeRegistry;
+use crate::core::archetypes::{ArchetypeRegistry, EffectKind};
 use crate::core::entity::EntityStore;
 use crate::core_types::*;
+use crate::sim::systems::effects::EffectMap;
 
 /// Offset applied to desirability values so that i16 can be stored as u16.
 /// A stored value of 32768 represents 0; 0 represents -32768; 65535 represents +32767.
@@ -378,6 +379,51 @@ impl AnalysisMaps {
             let lv = desirability_raw * 2 + 100 - pollution - crime - noise;
             self.land_value.set_by_index(i, lv.clamp(0, 65535) as u16);
         }
+    }
+
+    /// Rebuild analysis maps from a pre-computed `EffectMap`.
+    ///
+    /// Copies each relevant layer from the effect map into the analysis maps,
+    /// then recomputes land value using the populated crime map (so crime
+    /// properly reduces land value).
+    pub fn rebuild_from_effects(&mut self, effect_map: &EffectMap) {
+        let len = self.pollution.len();
+        for i in 0..len {
+            // Pollution layer (positive = harmful, store as-is in u16 via clamp)
+            let poll = effect_map.maps[EffectKind::Pollution as usize]
+                .get(i)
+                .copied()
+                .unwrap_or(0)
+                .max(0) as u16;
+            self.pollution.set_by_index(i, poll);
+
+            // Noise layer
+            let noise = effect_map.maps[EffectKind::Noise as usize]
+                .get(i)
+                .copied()
+                .unwrap_or(0)
+                .max(0) as u16;
+            self.noise.set_by_index(i, noise);
+
+            // Crime layer (positive = higher crime)
+            let crime = effect_map.maps[EffectKind::Crime as usize]
+                .get(i)
+                .copied()
+                .unwrap_or(0)
+                .clamp(0, i16::MAX) as u16;
+            self.crime.set_by_index(i, crime);
+
+            // Desirability / land value boost from EffectKind::LandValue layer
+            let lv_delta = effect_map.maps[EffectKind::LandValue as usize]
+                .get(i)
+                .copied()
+                .unwrap_or(0) as i32;
+            let stored = (DESIRABILITY_OFFSET as i32 + lv_delta)
+                .clamp(0, u16::MAX as i32) as u16;
+            self.desirability.set_by_index(i, stored);
+        }
+        // Recompute composite land value now that crime is populated.
+        self.compute_land_value();
     }
 }
 
