@@ -71,24 +71,37 @@ impl CommandSpec for FundsAvailableSpec {
 }
 
 /// Checks that a rectangular footprint has no existing entities.
-pub struct NoCollisionSpec {
+pub struct NoCollisionSpec<'r> {
     pub x: i16,
     pub y: i16,
     pub w: u8,
     pub h: u8,
+    pub registry: &'r ArchetypeRegistry,
 }
 
-impl CommandSpec for NoCollisionSpec {
+impl<'r> CommandSpec for NoCollisionSpec<'r> {
     fn check(&self, world: &WorldState) -> Result<(), CommandError> {
         for handle in world.entities.iter_alive() {
-            if let Some(pos) = world.entities.get_pos(handle) {
-                if pos.x >= self.x
-                    && pos.x < self.x + self.w as i16
-                    && pos.y >= self.y
-                    && pos.y < self.y + self.h as i16
-                {
-                    return Err(CommandError::TileOccupied);
-                }
+            let Some(pos) = world.entities.get_pos(handle) else {
+                continue;
+            };
+            let (ew, eh) = world
+                .entities
+                .get_archetype(handle)
+                .and_then(|id| self.registry.get(id))
+                .map(|def| (def.footprint_w as i16, def.footprint_h as i16))
+                .unwrap_or((1, 1));
+            if rects_overlap(
+                self.x,
+                self.y,
+                self.w as i16,
+                self.h as i16,
+                pos.x,
+                pos.y,
+                ew,
+                eh,
+            ) {
+                return Err(CommandError::TileOccupied);
             }
         }
         Ok(())
@@ -124,24 +137,20 @@ impl CommandSpec for TileOccupiedSpec {
     }
 }
 
-/// Checks that an archetype ID is valid.
-///
-/// NOTE: Full registry validation requires access to an `ArchetypeRegistry`,
-/// which is not currently part of `WorldState`. This spec performs a basic
-/// non-zero check. For full validation, use with an `ArchetypeRegistry` query
-/// once it is integrated into the world state.
-pub struct ValidArchetypeSpec {
+/// Checks that an archetype ID is valid (present in the registry).
+pub struct ValidArchetypeSpec<'r> {
     pub archetype_id: ArchetypeId,
+    pub registry: &'r ArchetypeRegistry,
 }
 
-impl CommandSpec for ValidArchetypeSpec {
+impl<'r> CommandSpec for ValidArchetypeSpec<'r> {
     fn check(&self, _world: &WorldState) -> Result<(), CommandError> {
-        if self.archetype_id == 0 {
+        if self.registry.get(self.archetype_id).is_some() {
+            Ok(())
+        } else {
             Err(CommandError::ValidationFailed(
                 "invalid archetype id".to_string(),
             ))
-        } else {
-            Ok(())
         }
     }
 }
@@ -150,24 +159,24 @@ impl CommandSpec for ValidArchetypeSpec {
 
 /// A composite specification that runs multiple specs in sequence.
 /// Short-circuits on the first failure.
-pub struct CompositeSpec {
-    specs: Vec<Box<dyn CommandSpec>>,
+pub struct CompositeSpec<'r> {
+    specs: Vec<Box<dyn CommandSpec + 'r>>,
 }
 
-impl CompositeSpec {
+impl<'r> CompositeSpec<'r> {
     /// Create a new empty composite spec.
     pub fn new() -> Self {
         CompositeSpec { specs: Vec::new() }
     }
 
     /// Add a spec to the pipeline. Builder pattern.
-    pub fn add(mut self, spec: Box<dyn CommandSpec>) -> Self {
+    pub fn add(mut self, spec: Box<dyn CommandSpec + 'r>) -> Self {
         self.specs.push(spec);
         self
     }
 }
 
-impl CommandSpec for CompositeSpec {
+impl<'r> CommandSpec for CompositeSpec<'r> {
     fn check(&self, world: &WorldState) -> Result<(), CommandError> {
         for spec in &self.specs {
             spec.check(world)?;
@@ -181,26 +190,27 @@ impl CommandSpec for CompositeSpec {
 /// Create a composite spec for the build (PlaceEntity) command.
 ///
 /// Validates: in-bounds, buildable terrain, no collision, valid archetype, funds.
-pub fn build_spec(
+pub fn build_spec<'r>(
     x: i16,
     y: i16,
     w: u8,
     h: u8,
     archetype_id: ArchetypeId,
     cost: MoneyCents,
-) -> CompositeSpec {
+    registry: &'r ArchetypeRegistry,
+) -> CompositeSpec<'r> {
     CompositeSpec::new()
         .add(Box::new(InBoundsSpec { x, y }))
         .add(Box::new(BuildableTerrainSpec { x, y }))
-        .add(Box::new(NoCollisionSpec { x, y, w, h }))
-        .add(Box::new(ValidArchetypeSpec { archetype_id }))
+        .add(Box::new(NoCollisionSpec { x, y, w, h, registry }))
+        .add(Box::new(ValidArchetypeSpec { archetype_id, registry }))
         .add(Box::new(FundsAvailableSpec { cost }))
 }
 
 /// Create a composite spec for the demolish (Bulldoze) command.
 ///
 /// Validates: in-bounds, tile has something to demolish.
-pub fn demolish_spec(x: i16, y: i16) -> CompositeSpec {
+pub fn demolish_spec(x: i16, y: i16) -> CompositeSpec<'static> {
     CompositeSpec::new()
         .add(Box::new(InBoundsSpec { x, y }))
         .add(Box::new(TileOccupiedSpec { x, y }))
@@ -209,7 +219,7 @@ pub fn demolish_spec(x: i16, y: i16) -> CompositeSpec {
 /// Create a composite spec for the zone (SetZoning) command.
 ///
 /// Validates: in-bounds.
-pub fn zone_spec(x: i16, y: i16) -> CompositeSpec {
+pub fn zone_spec(x: i16, y: i16) -> CompositeSpec<'static> {
     CompositeSpec::new().add(Box::new(InBoundsSpec { x, y }))
 }
 
@@ -237,7 +247,16 @@ pub fn validate_command_with_registry(
             rotation: _,
         } => {
             let Some(registry) = registry else {
-                return build_spec(*x, *y, 1, 1, *archetype_id, 0).check(world);
+                // Degraded path: no registry provided, perform basic checks only.
+                if *archetype_id == 0 {
+                    return Err(CommandError::ValidationFailed(
+                        "invalid archetype id".to_string(),
+                    ));
+                }
+                return CompositeSpec::new()
+                    .add(Box::new(InBoundsSpec { x: *x, y: *y }))
+                    .add(Box::new(BuildableTerrainSpec { x: *x, y: *y }))
+                    .check(world);
             };
             let Some(def) = registry.get(*archetype_id) else {
                 return Err(CommandError::ValidationFailed(
@@ -341,7 +360,9 @@ pub fn validate_command_with_registry(
 mod tests {
     use super::*;
     use crate::core::archetypes::ArchetypeRegistry;
-    use crate::core::buildings::{register_base_city_builder_archetypes, ARCH_RES_SMALL_HOUSE};
+    use crate::core::buildings::{
+        register_base_city_builder_archetypes, ARCH_RES_SMALL_HOUSE, ARCH_UTIL_POWER_PLANT,
+    };
     use crate::core::world::WorldState;
     use crate::core_types::{MapSize, TerrainType, ZoneType};
 
@@ -414,11 +435,13 @@ mod tests {
     #[test]
     fn no_collision_spec_passes_on_empty_tile() {
         let world = make_world();
+        let registry = ArchetypeRegistry::new(); // empty — fallback (1,1)
         let spec = NoCollisionSpec {
             x: 5,
             y: 5,
             w: 1,
             h: 1,
+            registry: &registry,
         };
         assert!(spec.check(&world).is_ok());
     }
@@ -427,11 +450,13 @@ mod tests {
     fn no_collision_spec_fails_on_occupied_tile() {
         let mut world = make_world();
         world.place_entity(1, 5, 5, 0);
+        let registry = ArchetypeRegistry::new(); // empty — fallback (1,1)
         let spec = NoCollisionSpec {
             x: 5,
             y: 5,
             w: 1,
             h: 1,
+            registry: &registry,
         };
         assert_eq!(spec.check(&world), Err(CommandError::TileOccupied));
     }
@@ -440,11 +465,13 @@ mod tests {
     fn no_collision_spec_passes_when_entity_outside_footprint() {
         let mut world = make_world();
         world.place_entity(1, 10, 10, 0);
+        let registry = ArchetypeRegistry::new(); // empty — fallback (1,1)
         let spec = NoCollisionSpec {
             x: 0,
             y: 0,
             w: 3,
             h: 3,
+            registry: &registry,
         };
         assert!(spec.check(&world).is_ok());
     }
@@ -453,11 +480,13 @@ mod tests {
     fn no_collision_spec_fails_when_entity_in_footprint() {
         let mut world = make_world();
         world.place_entity(1, 2, 2, 0);
+        let registry = ArchetypeRegistry::new(); // empty — fallback (1,1)
         let spec = NoCollisionSpec {
             x: 1,
             y: 1,
             w: 3,
             h: 3,
+            registry: &registry,
         };
         assert_eq!(spec.check(&world), Err(CommandError::TileOccupied));
     }
@@ -490,17 +519,66 @@ mod tests {
     // ── ValidArchetypeSpec ──────────────────────────────────────────────
 
     #[test]
-    fn valid_archetype_spec_passes_for_nonzero_id() {
+    fn valid_archetype_spec_fails_for_zero_id_unregistered() {
         let world = make_world();
-        let spec = ValidArchetypeSpec { archetype_id: 1 };
+        let mut registry = ArchetypeRegistry::new();
+        register_base_city_builder_archetypes(&mut registry);
+        // Zero is never registered
+        let spec = ValidArchetypeSpec { archetype_id: 0, registry: &registry };
+        assert_eq!(
+            spec.check(&world),
+            Err(CommandError::ValidationFailed("invalid archetype id".to_string()))
+        );
+    }
+
+    #[test]
+    fn valid_archetype_spec_passes_for_registered_id() {
+        let world = make_world();
+        let mut registry = ArchetypeRegistry::new();
+        register_base_city_builder_archetypes(&mut registry);
+        let spec = ValidArchetypeSpec {
+            archetype_id: ARCH_RES_SMALL_HOUSE,
+            registry: &registry,
+        };
         assert!(spec.check(&world).is_ok());
     }
 
     #[test]
-    fn valid_archetype_spec_fails_for_zero_id() {
+    fn valid_archetype_spec_rejects_unregistered_id() {
         let world = make_world();
-        let spec = ValidArchetypeSpec { archetype_id: 0 };
-        assert!(spec.check(&world).is_err());
+        let mut registry = ArchetypeRegistry::new();
+        register_base_city_builder_archetypes(&mut registry);
+        // ID 9999 is not registered
+        let spec = ValidArchetypeSpec { archetype_id: 9999, registry: &registry };
+        assert_eq!(
+            spec.check(&world),
+            Err(CommandError::ValidationFailed("invalid archetype id".to_string()))
+        );
+    }
+
+    // ── NoCollisionSpec: multi-tile footprint overlap ────────────────────
+
+    #[test]
+    fn no_collision_spec_detects_multi_tile_footprint_overlap() {
+        let mut world = make_world();
+        let mut registry = ArchetypeRegistry::new();
+        register_base_city_builder_archetypes(&mut registry);
+        // Place the 3x3 power plant archetype at (0,0)
+        world.place_entity(ARCH_UTIL_POWER_PLANT, 0, 0, 0);
+        // Attempt a 1x1 placement at (2,2) — inside the 3x3 footprint
+        let spec = NoCollisionSpec { x: 2, y: 2, w: 1, h: 1, registry: &registry };
+        assert_eq!(spec.check(&world), Err(CommandError::TileOccupied));
+    }
+
+    #[test]
+    fn no_collision_spec_passes_adjacent_to_multi_tile_entity() {
+        let mut world = make_world();
+        let mut registry = ArchetypeRegistry::new();
+        register_base_city_builder_archetypes(&mut registry);
+        world.place_entity(ARCH_UTIL_POWER_PLANT, 0, 0, 0);
+        // Placement at (3,0) is adjacent but not overlapping the 3x3 footprint
+        let spec = NoCollisionSpec { x: 3, y: 0, w: 1, h: 1, registry: &registry };
+        assert!(spec.check(&world).is_ok());
     }
 
     // ── BuildableTerrainSpec ────────────────────────────────────────────
@@ -562,15 +640,20 @@ mod tests {
 
     #[test]
     fn build_spec_composes_all_required_checks() {
-        let world = make_world();
-        let spec = build_spec(5, 5, 1, 1, 1, 100);
+        let mut world = make_world();
+        let mut registry = ArchetypeRegistry::new();
+        register_base_city_builder_archetypes(&mut registry);
+        // ARCH_RES_SMALL_HOUSE requires Residential zoning
+        world.tiles.set_zone(5, 5, crate::core_types::ZoneType::Residential);
+        let spec = build_spec(5, 5, 1, 1, ARCH_RES_SMALL_HOUSE, 100, &registry);
         assert!(spec.check(&world).is_ok());
     }
 
     #[test]
     fn build_spec_fails_out_of_bounds() {
         let world = make_world();
-        let spec = build_spec(99, 99, 1, 1, 1, 100);
+        let registry = ArchetypeRegistry::new();
+        let spec = build_spec(99, 99, 1, 1, ARCH_RES_SMALL_HOUSE, 100, &registry);
         assert_eq!(spec.check(&world), Err(CommandError::OutOfBounds));
     }
 
@@ -578,22 +661,28 @@ mod tests {
     fn build_spec_fails_unbuildable_terrain() {
         let mut world = make_world();
         world.tiles.set_terrain(5, 5, TerrainType::Water);
-        let spec = build_spec(5, 5, 1, 1, 1, 100);
+        let registry = ArchetypeRegistry::new();
+        let spec = build_spec(5, 5, 1, 1, ARCH_RES_SMALL_HOUSE, 100, &registry);
         assert_eq!(spec.check(&world), Err(CommandError::TileOccupied));
     }
 
     #[test]
     fn build_spec_fails_collision() {
         let mut world = make_world();
-        world.place_entity(1, 5, 5, 0);
-        let spec = build_spec(5, 5, 1, 1, 1, 100);
+        world.place_entity(ARCH_RES_SMALL_HOUSE, 5, 5, 0);
+        let mut registry = ArchetypeRegistry::new();
+        register_base_city_builder_archetypes(&mut registry);
+        world.tiles.set_zone(5, 5, crate::core_types::ZoneType::Residential);
+        let spec = build_spec(5, 5, 1, 1, ARCH_RES_SMALL_HOUSE, 100, &registry);
         assert_eq!(spec.check(&world), Err(CommandError::TileOccupied));
     }
 
     #[test]
     fn build_spec_fails_insufficient_funds() {
         let world = make_world(); // treasury = 500_000
-        let spec = build_spec(5, 5, 1, 1, 1, 1_000_000);
+        let mut registry = ArchetypeRegistry::new();
+        register_base_city_builder_archetypes(&mut registry);
+        let spec = build_spec(5, 5, 1, 1, ARCH_RES_SMALL_HOUSE, 1_000_000, &registry);
         assert_eq!(spec.check(&world), Err(CommandError::InsufficientFunds));
     }
 
