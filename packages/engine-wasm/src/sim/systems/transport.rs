@@ -9,6 +9,7 @@ use crate::core::archetypes::{ArchetypeRegistry, ArchetypeTag};
 use crate::core::entity::EntityStore;
 use crate::core::events::{EventBus, SimEvent};
 use crate::core::network::RoadGraph;
+use crate::core::tilemap::{TileFlags, TileMap};
 use crate::core_types::*;
 
 /// Default road capacity used for tiles without a road.
@@ -132,6 +133,7 @@ pub fn tick_transport(
     entities: &EntityStore,
     registry: &ArchetypeRegistry,
     road_graph: &RoadGraph,
+    tile_map: &TileMap,
     events: &mut EventBus,
     tick: Tick,
     map_size: MapSize,
@@ -179,10 +181,16 @@ pub fn tick_transport(
         };
 
         if def.has_tag(ArchetypeTag::Residential) {
-            // Each resident generates a trip.
-            let cap = def.resident_capacity();
-            for _ in 0..cap {
-                residential_positions.push(pos);
+            // Only count trips from residential entities whose tile has road access.
+            let has_road = tile_map
+                .get(pos.x as u32, pos.y as u32)
+                .map(|t| t.flags.contains(TileFlags::ROAD_ACCESS))
+                .unwrap_or(false);
+            if has_road {
+                let cap = def.resident_capacity();
+                for _ in 0..cap {
+                    residential_positions.push(pos);
+                }
             }
         }
 
@@ -270,6 +278,7 @@ pub fn tick_transport(
 mod tests {
     use super::*;
     use crate::core::archetypes::ArchetypeDefinition;
+    use crate::core::tilemap::TileMap;
 
     /// Helper: create a residential archetype.
     fn make_residential(id: ArchetypeId) -> ArchetypeDefinition {
@@ -382,11 +391,12 @@ mod tests {
         let entities = EntityStore::new(64);
         let registry = ArchetypeRegistry::new();
         let road_graph = RoadGraph::new();
+        let tile_map = TileMap::new(16, 16);
         let mut events = EventBus::new();
         let map_size = MapSize::new(16, 16);
 
         let stats = tick_transport(
-            &mut grid, &entities, &registry, &road_graph, &mut events, 0, map_size,
+            &mut grid, &entities, &registry, &road_graph, &tile_map, &mut events, 0, map_size,
         );
 
         assert_eq!(stats.total_trips, 0);
@@ -431,6 +441,7 @@ mod tests {
         let mut entities = EntityStore::new(64);
         let mut registry = ArchetypeRegistry::new();
         let road_graph = RoadGraph::new();
+        let mut tile_map = TileMap::new(16, 16);
         let mut events = EventBus::new();
         let map_size = MapSize::new(16, 16);
 
@@ -441,8 +452,11 @@ mod tests {
         make_active(&mut entities, 1, 2, 2);
         make_active(&mut entities, 2, 5, 5);
 
+        // Grant road access to the home tile so trips are counted.
+        tile_map.set_flags(2, 2, TileFlags::ROAD_ACCESS);
+
         let stats = tick_transport(
-            &mut grid, &entities, &registry, &road_graph, &mut events, 0, map_size,
+            &mut grid, &entities, &registry, &road_graph, &tile_map, &mut events, 0, map_size,
         );
 
         // The residential archetype has capacity 6 residents (1x1, 50% cov, 2 floors, 40 m2/person).
@@ -463,6 +477,7 @@ mod tests {
         let mut entities = EntityStore::new(256);
         let mut registry = ArchetypeRegistry::new();
         let road_graph = RoadGraph::new();
+        let mut tile_map = TileMap::new(16, 16);
         let mut events = EventBus::new();
         let map_size = MapSize::new(16, 16);
 
@@ -479,8 +494,11 @@ mod tests {
             }
         }
 
+        // Grant road access to the home tile so all 34 houses generate trips.
+        tile_map.set_flags(2, 2, TileFlags::ROAD_ACCESS);
+
         let stats = tick_transport(
-            &mut grid, &entities, &registry, &road_graph, &mut events, 0, map_size,
+            &mut grid, &entities, &registry, &road_graph, &tile_map, &mut events, 0, map_size,
         );
 
         // Density at (2,2) should be 34*6 = 204 which is > 200 (default capacity).
@@ -496,6 +514,7 @@ mod tests {
         let mut entities = EntityStore::new(512);
         let mut registry = ArchetypeRegistry::new();
         let road_graph = RoadGraph::new();
+        let mut tile_map = TileMap::new(16, 16);
         let mut events = EventBus::new();
         let map_size = MapSize::new(16, 16);
 
@@ -511,8 +530,11 @@ mod tests {
             }
         }
 
+        // Grant road access so all 68 houses generate trips.
+        tile_map.set_flags(2, 2, TileFlags::ROAD_ACCESS);
+
         let _stats = tick_transport(
-            &mut grid, &entities, &registry, &road_graph, &mut events, 0, map_size,
+            &mut grid, &entities, &registry, &road_graph, &tile_map, &mut events, 0, map_size,
         );
 
         // Should have at least one TrafficJam event.
@@ -538,6 +560,7 @@ mod tests {
         let mut entities = EntityStore::new(64);
         let mut registry = ArchetypeRegistry::new();
         let road_graph = RoadGraph::new();
+        let tile_map = TileMap::new(16, 16);
         let mut events = EventBus::new();
         let map_size = MapSize::new(16, 16);
 
@@ -549,7 +572,7 @@ mod tests {
         // Ticks 1, 2, 3 are not Transport phase (tick % 4 != 0).
         for tick in 1..4 {
             let stats = tick_transport(
-                &mut grid, &entities, &registry, &road_graph, &mut events, tick, map_size,
+                &mut grid, &entities, &registry, &road_graph, &tile_map, &mut events, tick, map_size,
             );
             assert_eq!(stats.total_trips, 0);
             assert_eq!(stats.congested_segments, 0);
@@ -565,6 +588,7 @@ mod tests {
         let mut entities = EntityStore::new(64);
         let mut registry = ArchetypeRegistry::new();
         let road_graph = RoadGraph::new();
+        let mut tile_map = TileMap::new(16, 16);
         let mut events = EventBus::new();
         let map_size = MapSize::new(16, 16);
 
@@ -578,8 +602,11 @@ mod tests {
         // One active commercial.
         make_active(&mut entities, 2, 5, 5);
 
+        // Grant road access to the active home tile so its residents generate trips.
+        tile_map.set_flags(2, 2, TileFlags::ROAD_ACCESS);
+
         let stats = tick_transport(
-            &mut grid, &entities, &registry, &road_graph, &mut events, 0, map_size,
+            &mut grid, &entities, &registry, &road_graph, &tile_map, &mut events, 0, map_size,
         );
 
         // Only the active residential building's residents should generate trips.
@@ -597,6 +624,7 @@ mod tests {
         let mut entities = EntityStore::new(64);
         let mut registry = ArchetypeRegistry::new();
         let road_graph = RoadGraph::new();
+        let mut tile_map = TileMap::new(16, 16);
         let mut events = EventBus::new();
         let map_size = MapSize::new(16, 16);
 
@@ -608,8 +636,12 @@ mod tests {
         make_active(&mut entities, 1, 4, 4);
         make_active(&mut entities, 2, 2, 2);
 
+        // Grant road access to both home tiles.
+        tile_map.set_flags(0, 0, TileFlags::ROAD_ACCESS);
+        tile_map.set_flags(4, 4, TileFlags::ROAD_ACCESS);
+
         let stats = tick_transport(
-            &mut grid, &entities, &registry, &road_graph, &mut events, 0, map_size,
+            &mut grid, &entities, &registry, &road_graph, &tile_map, &mut events, 0, map_size,
         );
 
         // 2 houses * 6 residents each = 12 trips.
@@ -632,6 +664,7 @@ mod tests {
         let mut entities = EntityStore::new(256);
         let mut registry = ArchetypeRegistry::new();
         let mut road_graph = RoadGraph::new();
+        let mut tile_map = TileMap::new(16, 16);
         let mut events = EventBus::new();
         let map_size = MapSize::new(16, 16);
 
@@ -649,8 +682,11 @@ mod tests {
         }
         make_active(&mut entities, 2, 5, 5);
 
+        // Grant road access to the home tile so all 34 houses generate trips.
+        tile_map.set_flags(2, 2, TileFlags::ROAD_ACCESS);
+
         let stats = tick_transport(
-            &mut grid, &entities, &registry, &road_graph, &mut events, 0, map_size,
+            &mut grid, &entities, &registry, &road_graph, &tile_map, &mut events, 0, map_size,
         );
 
         // Both tiles have highway capacity 2000, density 204 -> not congested.
@@ -665,6 +701,7 @@ mod tests {
         let mut entities = EntityStore::new(64);
         let mut registry = ArchetypeRegistry::new();
         let road_graph = RoadGraph::new();
+        let mut tile_map = TileMap::new(16, 16);
         let mut events = EventBus::new();
         let map_size = MapSize::new(16, 16);
 
@@ -675,8 +712,11 @@ mod tests {
         make_active(&mut entities, 1, 1, 1);
         make_active(&mut entities, 3, 5, 5);
 
+        // Grant road access to the home tile.
+        tile_map.set_flags(1, 1, TileFlags::ROAD_ACCESS);
+
         let stats = tick_transport(
-            &mut grid, &entities, &registry, &road_graph, &mut events, 0, map_size,
+            &mut grid, &entities, &registry, &road_graph, &tile_map, &mut events, 0, map_size,
         );
 
         // 6 residents -> 6 trips to the factory.
@@ -693,6 +733,7 @@ mod tests {
         let mut entities = EntityStore::new(64);
         let mut registry = ArchetypeRegistry::new();
         let road_graph = RoadGraph::new();
+        let tile_map = TileMap::new(16, 16);
         let mut events = EventBus::new();
         let map_size = MapSize::new(16, 16);
 
@@ -702,10 +743,64 @@ mod tests {
         make_active(&mut entities, 1, 2, 2);
 
         let stats = tick_transport(
-            &mut grid, &entities, &registry, &road_graph, &mut events, 0, map_size,
+            &mut grid, &entities, &registry, &road_graph, &tile_map, &mut events, 0, map_size,
         );
 
         assert_eq!(stats.total_trips, 0);
         assert_eq!(grid.get(2, 2), 0);
+    }
+
+    // ─── Test 12: Residential without road access generates no trips ──────
+
+    #[test]
+    fn residential_without_road_access_generates_no_trips() {
+        let mut grid = TrafficGrid::new(16, 16);
+        let mut entities = EntityStore::new(64);
+        let mut registry = ArchetypeRegistry::new();
+        let road_graph = RoadGraph::new();
+        let tile_map = TileMap::new(16, 16); // no ROAD_ACCESS set anywhere
+        let mut events = EventBus::new();
+        let map_size = MapSize::new(16, 16);
+
+        registry.register(make_residential(1));
+        registry.register(make_commercial(2));
+
+        // Place house and shop, but home tile has no road access.
+        make_active(&mut entities, 1, 2, 2);
+        make_active(&mut entities, 2, 5, 5);
+
+        let stats = tick_transport(
+            &mut grid, &entities, &registry, &road_graph, &tile_map, &mut events, 0, map_size,
+        );
+
+        assert_eq!(stats.total_trips, 0, "No trips should be generated without road access");
+    }
+
+    // ─── Test 13: Residential with road access generates trips ───────────
+
+    #[test]
+    fn residential_with_road_access_generates_trips() {
+        let mut grid = TrafficGrid::new(16, 16);
+        let mut entities = EntityStore::new(64);
+        let mut registry = ArchetypeRegistry::new();
+        let road_graph = RoadGraph::new();
+        let mut tile_map = TileMap::new(16, 16);
+        let mut events = EventBus::new();
+        let map_size = MapSize::new(16, 16);
+
+        registry.register(make_residential(1));
+        registry.register(make_commercial(2));
+
+        make_active(&mut entities, 1, 2, 2);
+        make_active(&mut entities, 2, 5, 5);
+
+        // Set ROAD_ACCESS on the home tile.
+        tile_map.set_flags(2, 2, TileFlags::ROAD_ACCESS);
+
+        let stats = tick_transport(
+            &mut grid, &entities, &registry, &road_graph, &tile_map, &mut events, 0, map_size,
+        );
+
+        assert!(stats.total_trips > 0, "Trips should be generated when home tile has road access");
     }
 }

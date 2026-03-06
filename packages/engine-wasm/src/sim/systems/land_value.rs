@@ -5,6 +5,8 @@
 //! and negative factors (pollution, noise, crime). The result feeds into
 //! wealth-density growth, rent calculation, and tax base computation.
 
+use crate::core::tilemap::{TileFlags, TileMap};
+
 /// Inputs for land value computation.
 #[derive(Debug, Clone, Default)]
 pub struct LandValueInputs {
@@ -82,13 +84,30 @@ impl ILandValueModel for DefaultLandValueModel {
 }
 
 /// Compute land value for a grid of tiles.
+///
+/// For each tile, `transit_access` is derived from `TileFlags::ROAD_ACCESS` on the
+/// corresponding `TileMap` cell. A tile with road access receives `transit_access = 40_000`;
+/// otherwise it is `0`. All other fields in `inputs` are used as-is.
 pub fn compute_land_value_grid(
-    _width: usize,
+    width: usize,
     _height: usize,
     inputs: &[LandValueInputs],
+    tile_map: &TileMap,
     model: &dyn ILandValueModel,
 ) -> Vec<u16> {
-    inputs.iter().map(|i| model.compute(i)).collect()
+    inputs.iter().enumerate().map(|(idx, i)| {
+        let x = (idx % width.max(1)) as u32;
+        let y = (idx / width.max(1)) as u32;
+        let has_road = tile_map
+            .get(x, y)
+            .map(|t| t.flags.contains(TileFlags::ROAD_ACCESS))
+            .unwrap_or(false);
+        let effective = LandValueInputs {
+            transit_access: if has_road { 40_000u16 } else { 0 },
+            ..i.clone()
+        };
+        model.compute(&effective)
+    }).collect()
 }
 
 /// Compute rent from land value (simple linear mapping).
@@ -108,6 +127,7 @@ pub fn compute_tax_base(land_value: u16, area: u16) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::tilemap::TileMap;
 
     // ---- Test 1: High services + low negatives -> high land value ----
 
@@ -319,7 +339,8 @@ mod tests {
                 ..Default::default()
             },
         ];
-        let result = compute_land_value_grid(3, 1, &inputs, &model);
+        let tile_map = TileMap::new(3, 1);
+        let result = compute_land_value_grid(3, 1, &inputs, &tile_map, &model);
         assert_eq!(result.len(), 3);
 
         // First tile: only service_proximity, should be > 0
@@ -336,7 +357,8 @@ mod tests {
     fn empty_inputs_empty_output() {
         let model = DefaultLandValueModel::default();
         let inputs: Vec<LandValueInputs> = vec![];
-        let result = compute_land_value_grid(0, 0, &inputs, &model);
+        let tile_map = TileMap::new(0, 0);
+        let result = compute_land_value_grid(0, 0, &inputs, &tile_map, &model);
         assert!(result.is_empty());
     }
 
@@ -515,8 +537,46 @@ mod tests {
                 ..Default::default()
             },
         ];
-        let result = compute_land_value_grid(3, 1, &inputs, &model);
+        let tile_map = TileMap::new(3, 1);
+        let result = compute_land_value_grid(3, 1, &inputs, &tile_map, &model);
         assert!(result[0] < result[1]);
         assert!(result[1] < result[2]);
+    }
+
+    // ---- Test 21: Road access sets transit_access ----
+
+    #[test]
+    fn road_access_sets_transit_access() {
+        let model = DefaultLandValueModel::default();
+        let inputs = vec![LandValueInputs::default()];
+        let mut tile_map = TileMap::new(1, 1);
+        tile_map.set_flags(0, 0, TileFlags::ROAD_ACCESS);
+
+        let result = compute_land_value_grid(1, 1, &inputs, &tile_map, &model);
+        assert_eq!(result.len(), 1);
+        // With transit_access = 40_000 and transit_weight = 15, value should be > 0.
+        assert!(
+            result[0] > 0,
+            "Road access should produce a positive land value via transit_access"
+        );
+    }
+
+    // ---- Test 22: No road access yields no transit boost ----
+
+    #[test]
+    fn no_road_access_transit_zero() {
+        let model = DefaultLandValueModel::default();
+        let inputs = vec![LandValueInputs::default()];
+        let tile_map = TileMap::new(1, 1); // no flags set
+
+        let result = compute_land_value_grid(1, 1, &inputs, &tile_map, &model);
+        assert_eq!(result.len(), 1);
+
+        // All-zero inputs with no road access should yield the same as direct model.compute.
+        let expected = model.compute(&LandValueInputs::default());
+        assert_eq!(
+            result[0], expected,
+            "No road access should yield same value as all-zero inputs"
+        );
     }
 }

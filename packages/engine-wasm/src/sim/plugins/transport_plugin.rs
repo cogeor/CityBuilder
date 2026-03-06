@@ -13,6 +13,7 @@ impl SimulationPlugin for TransportPlugin {
             &w.world.entities,
             w.registry,
             w.road_graph,
+            &w.world.tiles,
             w.events,
             tick,
             map_size,
