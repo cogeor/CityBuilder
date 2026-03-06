@@ -4,7 +4,7 @@
 
 import { CommandHistory, type CommandRecord } from "./history/command_history.js";
 import { PluginHost, PluginRegistry } from "./plugins/index.js";
-import type { EngineCommand } from "./engine/commands.js";
+import type { EngineCommand, SimSpeedName } from "./engine/commands.js";
 import {
   SaveManager,
   InMemorySaveStorage,
@@ -15,6 +15,34 @@ import { WorkerManager, type IWorkerManager } from "./messaging/worker_manager.j
 function getCommandKind(command: Readonly<EngineCommand>): string {
   const keys = Object.keys(command);
   return keys.length > 0 ? keys[0] : "Unknown";
+}
+
+function deriveUndoPayload(
+  command: Readonly<EngineCommand>,
+  lastSimSpeed: SimSpeedName,
+): EngineCommand | null {
+  if ("SetZoning" in command) {
+    const c = command.SetZoning;
+    return {
+      SetZoning: {
+        x: c.x,
+        y: c.y,
+        w: c.w,
+        h: c.h,
+        zone: "None",
+      },
+    };
+  }
+  if ("SetSimSpeed" in command) {
+    // Undo: restore the speed that was active before this command.
+    return { SetSimSpeed: { speed: lastSimSpeed } };
+  }
+  // SetRoadLine: no structural undo — the road graph state before painting is
+  // not captured, so we cannot reverse it without a full snapshot.
+  // PlaceEntity: undo requires the EntityHandle returned by the engine effect,
+  // which is only known after the command is applied (not at dispatch time).
+  // Bulldoze: tiles and entities are gone; no undo without snapshot.
+  return null;
 }
 
 // ---- RuntimeConfig ----
@@ -64,6 +92,8 @@ export class RuntimeFacade {
   private _workerManager: IWorkerManager | null = null;
   private _commandSequence: number = 0;
   private readonly _stateChangeCallbacks: Array<(state: RuntimeState) => void> = [];
+  /** Last known simulation speed — used to derive undo payloads for SetSimSpeed. */
+  private _lastSimSpeed: SimSpeedName = "Normal";
 
   constructor(config: RuntimeConfig) {
     this._config = config;
@@ -199,9 +229,14 @@ export class RuntimeFacade {
       id: this._commandSequence,
       type: getCommandKind(command),
       doPayload: command,
-      undoPayload: null,
+      undoPayload: deriveUndoPayload(command, this._lastSimSpeed),
       timestamp: Date.now(),
     };
+
+    // Track speed changes so SetSimSpeed undo can restore the previous speed.
+    if ("SetSimSpeed" in command) {
+      this._lastSimSpeed = command.SetSimSpeed.speed;
+    }
 
     this._commandHistory.push(record);
 
@@ -221,7 +256,12 @@ export class RuntimeFacade {
     if (this._state !== RuntimeState.Running) {
       return null;
     }
-    return this._commandHistory.undo();
+    const record = this._commandHistory.undo();
+    if (record && this._workerManager && record.undoPayload) {
+      const payload = record.undoPayload as EngineCommand;
+      this._workerManager.sendCommand(JSON.stringify(payload)).catch(() => {});
+    }
+    return record;
   }
 
   /**
@@ -232,7 +272,12 @@ export class RuntimeFacade {
     if (this._state !== RuntimeState.Running) {
       return null;
     }
-    return this._commandHistory.redo();
+    const record = this._commandHistory.redo();
+    if (record && this._workerManager) {
+      const payload = record.doPayload as EngineCommand;
+      this._workerManager.sendCommand(JSON.stringify(payload)).catch(() => {});
+    }
+    return record;
   }
 
   // ---- Speed Control ----
