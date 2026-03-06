@@ -2,11 +2,54 @@
 //!
 //! Converts zoned, empty land into actual structures over time. This is a
 //! core city-builder loop: zone first, then let the simulation populate.
+//!
+//! Development uses a persistent `StripeWalkIter` per `(ZoneType, ZoneDensity)`
+//! pair so tiles fill in spatial order rather than random scatter, matching
+//! the SimCity scan-line walk pattern.
 
 use crate::core::archetypes::{ArchetypeDefinition, ArchetypeRegistry, ArchetypeTag};
 use crate::core::world::WorldState;
-use crate::core_types::{EntityHandle, Tick, ZoneType};
+use crate::core_types::{EntityHandle, Tick, ZoneDensity, ZoneType};
 use crate::math::rng::Rng;
+use crate::sim::systems::stripe_walk::StripeWalkIter;
+
+// ─── Development demand valves ────────────────────────────────────────────────
+
+/// Demand signals that gate zoned development per zone type.
+///
+/// Mirrors SimCity's RValve/CValve/IValve without census-cycle indirection.
+/// Positive = demand, zero/negative = surplus → no new development.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ZoneDemand {
+    /// Residential demand [-100..+100].
+    pub residential: i16,
+    /// Commercial demand [-100..+100].
+    pub commercial: i16,
+    /// Industrial demand [-100..+100].
+    pub industrial: i16,
+}
+
+impl ZoneDemand {
+    /// All zones at maximum demand (used when demand is unconstrained).
+    pub const FULL: ZoneDemand = ZoneDemand {
+        residential: 100,
+        commercial: 100,
+        industrial: 100,
+    };
+
+    /// Returns true if the given zone has positive demand.
+    pub fn has_demand_for(&self, zone: ZoneType) -> bool {
+        match zone {
+            ZoneType::Residential => self.residential > 0,
+            ZoneType::Commercial  => self.commercial > 0,
+            ZoneType::Industrial  => self.industrial > 0,
+            // Civic always develops regardless of demand
+            ZoneType::Civic | ZoneType::Park | ZoneType::Transport | ZoneType::None => true,
+        }
+    }
+}
+
+// ─── Development configuration ────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy)]
 pub struct DevelopmentConfig {
@@ -25,54 +68,138 @@ impl Default for DevelopmentConfig {
     }
 }
 
+// ─── Development state (persistent across ticks) ─────────────────────────────
+
+/// Zone × density index (4 zones × 3 densities = 12 slots).
+/// Indexed as `zone_index * 3 + density_index`.
+const WALKER_COUNT: usize = 4 * 3;
+
+fn walker_index(zone: ZoneType, density: ZoneDensity) -> usize {
+    let zi = match zone {
+        ZoneType::Residential => 0,
+        ZoneType::Commercial  => 1,
+        ZoneType::Industrial  => 2,
+        ZoneType::Civic       => 3,
+        ZoneType::None | ZoneType::Park | ZoneType::Transport => return usize::MAX,
+    };
+    let di = density as usize;
+    zi * 3 + di
+}
+
+/// Persistent iterators for each `(ZoneType, ZoneDensity)` combination.
+///
+/// Stored in `BuildingsPlugin` so the cursor survives across ticks.
+pub struct DevelopmentState {
+    walkers: [Option<StripeWalkIter>; WALKER_COUNT],
+    map_width: u16,
+    map_height: u16,
+}
+
+impl std::fmt::Debug for DevelopmentState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DevelopmentState")
+            .field("map_width", &self.map_width)
+            .field("map_height", &self.map_height)
+            .finish()
+    }
+}
+
+impl DevelopmentState {
+    pub fn new(map_width: u16, map_height: u16) -> Self {
+        Self {
+            walkers: std::array::from_fn(|_| None),
+            map_width,
+            map_height,
+        }
+    }
+
+    fn walker_for(&mut self, zone: ZoneType, density: ZoneDensity) -> Option<&mut StripeWalkIter> {
+        let idx = walker_index(zone, density);
+        if idx == usize::MAX {
+            return None;
+        }
+        let (w, h) = (self.map_width, self.map_height);
+        Some(self.walkers[idx].get_or_insert_with(|| StripeWalkIter::new(w, h)))
+    }
+}
+
+// ─── Public entry points ──────────────────────────────────────────────────────
+
 pub fn tick_zoned_development(
     world: &mut WorldState,
     registry: &ArchetypeRegistry,
     tick: Tick,
     rng: &mut Rng,
 ) -> u32 {
-    tick_zoned_development_with_config(world, registry, tick, rng, DevelopmentConfig::default())
+    let mut state = DevelopmentState::new(world.map_size().width, world.map_size().height);
+    tick_zoned_development_with_config(world, registry, tick, rng, DevelopmentConfig::default(), &mut state, ZoneDemand::FULL)
 }
 
 pub fn tick_zoned_development_with_config(
     world: &mut WorldState,
     registry: &ArchetypeRegistry,
     tick: Tick,
-    rng: &mut Rng,
+    _rng: &mut Rng,
     config: DevelopmentConfig,
+    state: &mut DevelopmentState,
+    demand: ZoneDemand,
 ) -> u32 {
     if config.tick_interval == 0 || tick % config.tick_interval as u64 != 0 {
         return 0;
     }
 
-    let map = world.map_size();
+    let map_size = world.map_size();
     let zone_candidates = collect_zone_archetypes(registry);
     let mut occupied = build_occupied_mask(world, registry);
     let mut placements = 0u32;
 
-    for _ in 0..config.max_attempts_per_tick {
+    // Stripe-walk through each zone/density combination.
+    // We iterate zones and densities, advancing each walker until we run out
+    // of budget or map passes.
+    const ZONE_DENSITY_PAIRS: [(ZoneType, ZoneDensity); 12] = [
+        (ZoneType::Residential, ZoneDensity::Low),
+        (ZoneType::Residential, ZoneDensity::Medium),
+        (ZoneType::Residential, ZoneDensity::High),
+        (ZoneType::Commercial,  ZoneDensity::Low),
+        (ZoneType::Commercial,  ZoneDensity::Medium),
+        (ZoneType::Commercial,  ZoneDensity::High),
+        (ZoneType::Industrial,  ZoneDensity::Low),
+        (ZoneType::Industrial,  ZoneDensity::Medium),
+        (ZoneType::Industrial,  ZoneDensity::High),
+        (ZoneType::Civic,       ZoneDensity::Low),
+        (ZoneType::Civic,       ZoneDensity::Medium),
+        (ZoneType::Civic,       ZoneDensity::High),
+    ];
+
+    'outer: for &(zone, density) in &ZONE_DENSITY_PAIRS {
         if placements >= config.max_placements_per_tick as u32 {
-            break;
+            break 'outer;
         }
 
-        let x = rng.next_bounded(map.width as u32) as i16;
-        let y = rng.next_bounded(map.height as u32) as i16;
-        let zone = match if x < 0 || y < 0 { None } else { world.tiles.get(x as u32, y as u32) } {
-            Some(tile) => tile.zone,
-            None => continue,
-        };
-
-        if zone == ZoneType::None || is_occupied(&occupied, map.width, x, y) {
+        // Demand valve: skip zones with no demand
+        if !demand.has_demand_for(zone) {
             continue;
         }
 
-        let archetype_ids = match zone_candidates_for(zone, &zone_candidates) {
+        let archetype_ids = match zone_candidates_for(zone, density, &zone_candidates) {
             Some(ids) if !ids.is_empty() => ids,
             _ => continue,
         };
 
-        let pick = rng.next_bounded(archetype_ids.len() as u32) as usize;
-        let archetype_id = archetype_ids[pick];
+        // Advance stripe walker to find next matching tile
+        let Some(walker) = state.walker_for(zone, density) else {
+            continue;
+        };
+        let Some((x, y)) = walker.next_zoned(&world.tiles, zone, density) else {
+            continue;
+        };
+
+        if is_occupied(&occupied, map_size.width, x, y) {
+            continue;
+        }
+
+        // Deterministic archetype pick: sorted IDs, first candidate per density tier
+        let archetype_id = archetype_ids[0];
         let def = match registry.get(archetype_id) {
             Some(def) => def,
             None => continue,
@@ -86,12 +213,9 @@ pub fn tick_zoned_development_with_config(
             continue;
         }
 
-        if let Some(handle) = world.place_entity(archetype_id, x, y, 0) {
+        if let Some(_handle) = world.place_entity(archetype_id, x, y, 0) {
             world.treasury -= def.cost_at_level(1);
-            mark_occupied(&mut occupied, map.width, x, y, def.footprint_w, def.footprint_h);
-            if !world.entities.is_valid(handle) {
-                continue;
-            }
+            mark_occupied(&mut occupied, map_size.width, x, y, def.footprint_w, def.footprint_h);
             placements += 1;
         }
     }
@@ -99,12 +223,14 @@ pub fn tick_zoned_development_with_config(
     placements
 }
 
+// ─── Archetype bucketing ──────────────────────────────────────────────────────
+
 #[derive(Default)]
 struct ZoneArchetypes {
-    residential: Vec<u16>,
-    commercial: Vec<u16>,
-    industrial: Vec<u16>,
-    civic: Vec<u16>,
+    residential: [Vec<u16>; 3], // indexed by ZoneDensity (0=Low, 1=Med, 2=High)
+    commercial:  [Vec<u16>; 3],
+    industrial:  [Vec<u16>; 3],
+    civic:       [Vec<u16>; 3],
 }
 
 fn collect_zone_archetypes(registry: &ArchetypeRegistry) -> ZoneArchetypes {
@@ -116,28 +242,65 @@ fn collect_zone_archetypes(registry: &ArchetypeRegistry) -> ZoneArchetypes {
         if def.has_tag(ArchetypeTag::Utility) || def.has_tag(ArchetypeTag::Transport) {
             continue;
         }
+        let di = density_index(def);
         if def.has_tag(ArchetypeTag::Residential) {
-            out.residential.push(id);
+            out.residential[di].push(id);
         } else if def.has_tag(ArchetypeTag::Commercial) {
-            out.commercial.push(id);
+            out.commercial[di].push(id);
         } else if def.has_tag(ArchetypeTag::Industrial) {
-            out.industrial.push(id);
+            out.industrial[di].push(id);
         } else if def.has_tag(ArchetypeTag::Civic) {
-            out.civic.push(id);
+            out.civic[di].push(id);
         }
     }
     out
 }
 
-fn zone_candidates_for(zone: ZoneType, candidates: &ZoneArchetypes) -> Option<&[u16]> {
-    match zone {
-        ZoneType::Residential => Some(&candidates.residential),
-        ZoneType::Commercial  => Some(&candidates.commercial),
-        ZoneType::Industrial  => Some(&candidates.industrial),
-        ZoneType::Civic       => Some(&candidates.civic),
-        ZoneType::None | ZoneType::Park | ZoneType::Transport => None,
+/// Map archetype density tags to a slot index (0=Low, 1=Med, 2=High).
+/// Defaults to Low if no density tag is present.
+fn density_index(def: &ArchetypeDefinition) -> usize {
+    if def.has_tag(ArchetypeTag::HighDensity) {
+        2
+    } else if def.has_tag(ArchetypeTag::MediumDensity) {
+        1
+    } else {
+        0 // Low or untagged → Low
     }
 }
+
+fn zone_candidates_for<'a>(
+    zone: ZoneType,
+    density: ZoneDensity,
+    candidates: &'a ZoneArchetypes,
+) -> Option<&'a [u16]> {
+    let di = density as usize;
+    let slot = match zone {
+        ZoneType::Residential => &candidates.residential[di],
+        ZoneType::Commercial  => &candidates.commercial[di],
+        ZoneType::Industrial  => &candidates.industrial[di],
+        ZoneType::Civic       => &candidates.civic[di],
+        ZoneType::None | ZoneType::Park | ZoneType::Transport => return None,
+    };
+    if slot.is_empty() {
+        // Fall back to Low density if no archetypes for requested density tier
+        let low_slot = match zone {
+            ZoneType::Residential => &candidates.residential[0],
+            ZoneType::Commercial  => &candidates.commercial[0],
+            ZoneType::Industrial  => &candidates.industrial[0],
+            ZoneType::Civic       => &candidates.civic[0],
+            _ => return None,
+        };
+        if low_slot.is_empty() {
+            None
+        } else {
+            Some(low_slot.as_slice())
+        }
+    } else {
+        Some(slot.as_slice())
+    }
+}
+
+// ─── Placement helpers ────────────────────────────────────────────────────────
 
 fn can_place_archetype(
     world: &WorldState,
@@ -223,6 +386,8 @@ fn is_occupied(mask: &[bool], map_width: u16, x: i16, y: i16) -> bool {
     mask.get(idx).copied().unwrap_or(true)
 }
 
+// ─── Tests ───────────────────────────────────────────────────────────────────
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -236,13 +401,14 @@ mod tests {
         let mut registry = ArchetypeRegistry::new();
         register_base_city_builder_archetypes(&mut registry);
 
-        for y in 2..6 {
-            for x in 2..6 {
+        for y in 2..6u32 {
+            for x in 2..6u32 {
                 world.tiles.set_zone(x, y, ZoneType::Residential);
             }
         }
 
         let mut rng = Rng::new(42);
+        let mut state = DevelopmentState::new(16, 16);
         let placed = tick_zoned_development_with_config(
             &mut world,
             &registry,
@@ -253,6 +419,8 @@ mod tests {
                 max_attempts_per_tick: 128,
                 max_placements_per_tick: 8,
             },
+            &mut state,
+            ZoneDemand::FULL,
         );
 
         assert!(placed > 0);
@@ -271,6 +439,7 @@ mod tests {
         let registry = ArchetypeRegistry::new();
         world.tiles.set_zone(1, 1, ZoneType::Residential);
         let mut rng = Rng::new(7);
+        let mut state = DevelopmentState::new(8, 8);
 
         let placed = tick_zoned_development_with_config(
             &mut world,
@@ -282,9 +451,83 @@ mod tests {
                 max_attempts_per_tick: 16,
                 max_placements_per_tick: 4,
             },
+            &mut state,
+            ZoneDemand::FULL,
         );
 
         assert_eq!(placed, 0);
         assert_eq!(world.entities.count(), 0);
+    }
+
+    #[test]
+    fn demand_valve_blocks_residential_when_no_demand() {
+        let mut world = WorldState::new(MapSize::new(16, 16), 1);
+        let mut registry = ArchetypeRegistry::new();
+        register_base_city_builder_archetypes(&mut registry);
+
+        for y in 0..8u32 {
+            for x in 0..8u32 {
+                world.tiles.set_zone(x, y, ZoneType::Residential);
+            }
+        }
+
+        let mut rng = Rng::new(1);
+        let mut state = DevelopmentState::new(16, 16);
+        let no_demand = ZoneDemand { residential: 0, commercial: 50, industrial: 50 };
+
+        let placed = tick_zoned_development_with_config(
+            &mut world,
+            &registry,
+            1,
+            &mut rng,
+            DevelopmentConfig { tick_interval: 1, max_attempts_per_tick: 64, max_placements_per_tick: 8 },
+            &mut state,
+            no_demand,
+        );
+
+        assert_eq!(placed, 0, "residential should not develop when demand is 0");
+    }
+
+    #[test]
+    fn density_archetype_routing_high_density() {
+        // Register an archetype tagged HighDensity + Residential
+        use crate::core::archetypes::{ArchetypeDefinition, ArchetypeTag};
+        let mut registry = ArchetypeRegistry::new();
+        let def = ArchetypeDefinition {
+            id: 999,
+            name: "High Rise".to_string(),
+            tags: vec![ArchetypeTag::Residential, ArchetypeTag::HighDensity],
+            footprint_w: 1,
+            footprint_h: 1,
+            coverage_ratio_pct: 80,
+            floors: 10,
+            usable_ratio_pct: 80,
+            base_cost_cents: 50_000,
+            base_upkeep_cents_per_tick: 10,
+            power_demand_kw: 50,
+            power_supply_kw: 0,
+            water_demand: 10,
+            water_supply: 0,
+            water_coverage_radius: 0,
+            is_water_pipe: false,
+            service_radius: 0,
+            desirability_radius: 0,
+            desirability_magnitude: 0,
+            pollution: 0,
+            noise: 5,
+            build_time_ticks: 100,
+            max_level: 1,
+            prerequisites: vec![],
+            workspace_per_job_m2: 0,
+            living_space_per_person_m2: 20,
+        };
+        registry.register(def);
+
+        let candidates = collect_zone_archetypes(&registry);
+        // High density slot should contain id 999
+        assert!(candidates.residential[2].contains(&999));
+        // Low and medium slots should be empty
+        assert!(candidates.residential[0].is_empty());
+        assert!(candidates.residential[1].is_empty());
     }
 }

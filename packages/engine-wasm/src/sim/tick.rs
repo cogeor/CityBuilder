@@ -110,7 +110,7 @@ impl SimulationEngine {
             pending_commands: Vec::new(),
             cache_manager: CacheManager::new(),
             plugins: vec![
-                Box::new(BuildingsPlugin),
+                Box::new(BuildingsPlugin::new()),
                 Box::new(ConstructionPlugin),
                 Box::new(PowerPlugin),
                 Box::new(WaterPlugin),

@@ -2,6 +2,7 @@
 
 pub mod buildings;
 pub mod city_events;
+pub mod stripe_walk;
 pub mod commute_happiness;
 pub mod construction;
 pub mod education;
