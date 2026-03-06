@@ -6,6 +6,7 @@
 
 use crate::core::archetypes::ArchetypeRegistry;
 use crate::core::commands_spec;
+use crate::core::math_util::rects_overlap;
 use crate::core::network::{RoadGraph, RoadType};
 use crate::core::world::{CityPolicies, WorldState};
 use crate::core_types::*;
@@ -351,23 +352,6 @@ fn try_add_road_segment(
         return false;
     }
     road_graph.add_segment(TileCoord::new(ax, ay), TileCoord::new(bx, by), road_type)
-}
-
-fn rects_overlap(
-    ax: i16,
-    ay: i16,
-    aw: i16,
-    ah: i16,
-    bx: i16,
-    by: i16,
-    bw: i16,
-    bh: i16,
-) -> bool {
-    let a_right = ax + aw;
-    let a_bottom = ay + ah;
-    let b_right = bx + bw;
-    let b_bottom = by + bh;
-    ax < b_right && a_right > bx && ay < b_bottom && a_bottom > by
 }
 
 /// Get the current value of a policy.

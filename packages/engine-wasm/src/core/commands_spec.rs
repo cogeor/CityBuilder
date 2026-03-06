@@ -7,6 +7,7 @@
 use crate::core::archetypes::ArchetypeRegistry;
 use crate::core::buildings::zone_for_archetype;
 use crate::core::commands::{Command, CommandError};
+use crate::core::math_util::rects_overlap;
 use crate::core::world::WorldState;
 use crate::core_types::*;
 
@@ -332,23 +333,6 @@ pub fn validate_command_with_registry(
         }
         Command::SetPolicy { .. } => Ok(()),
     }
-}
-
-fn rects_overlap(
-    ax: i16,
-    ay: i16,
-    aw: i16,
-    ah: i16,
-    bx: i16,
-    by: i16,
-    bw: i16,
-    bh: i16,
-) -> bool {
-    let a_right = ax + aw;
-    let a_bottom = ay + ah;
-    let b_right = bx + bw;
-    let b_bottom = by + bh;
-    ax < b_right && a_right > bx && ay < b_bottom && a_bottom > by
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────────

@@ -10,6 +10,7 @@ pub mod diffs;
 pub mod entity;
 pub mod events;
 pub mod mapgen;
+pub mod math_util;
 pub mod network;
 pub mod region;
 pub mod scale;
