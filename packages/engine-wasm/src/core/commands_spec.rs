@@ -50,7 +50,7 @@ impl CommandSpec for BuildableTerrainSpec {
         if world.is_buildable(self.x, self.y) {
             Ok(())
         } else {
-            Err(CommandError::TileOccupied)
+            Err(CommandError::TerrainNotBuildable)
         }
     }
 }
@@ -148,9 +148,7 @@ impl<'r> CommandSpec for ValidArchetypeSpec<'r> {
         if self.registry.get(self.archetype_id).is_some() {
             Ok(())
         } else {
-            Err(CommandError::ValidationFailed(
-                "invalid archetype id".to_string(),
-            ))
+            Err(CommandError::InvalidArchetype)
         }
     }
 }
@@ -249,9 +247,7 @@ pub fn validate_command_with_registry(
             let Some(registry) = registry else {
                 // Degraded path: no registry provided, perform basic checks only.
                 if *archetype_id == 0 {
-                    return Err(CommandError::ValidationFailed(
-                        "invalid archetype id".to_string(),
-                    ));
+                    return Err(CommandError::InvalidArchetype);
                 }
                 return CompositeSpec::new()
                     .add(Box::new(InBoundsSpec { x: *x, y: *y }))
@@ -259,9 +255,7 @@ pub fn validate_command_with_registry(
                     .check(world);
             };
             let Some(def) = registry.get(*archetype_id) else {
-                return Err(CommandError::ValidationFailed(
-                    "invalid archetype id".to_string(),
-                ));
+                return Err(CommandError::InvalidArchetype);
             };
             if *x < 0 || *y < 0 {
                 return Err(CommandError::OutOfBounds);
@@ -290,9 +284,7 @@ pub fn validate_command_with_registry(
                             return Err(CommandError::OutOfBounds);
                         };
                         if tile.zone != zone {
-                            return Err(CommandError::ValidationFailed(
-                                "zoning mismatch for archetype".to_string(),
-                            ));
+                            return Err(CommandError::WrongZone);
                         }
                     }
                 }
@@ -527,7 +519,7 @@ mod tests {
         let spec = ValidArchetypeSpec { archetype_id: 0, registry: &registry };
         assert_eq!(
             spec.check(&world),
-            Err(CommandError::ValidationFailed("invalid archetype id".to_string()))
+            Err(CommandError::InvalidArchetype)
         );
     }
 
@@ -552,7 +544,7 @@ mod tests {
         let spec = ValidArchetypeSpec { archetype_id: 9999, registry: &registry };
         assert_eq!(
             spec.check(&world),
-            Err(CommandError::ValidationFailed("invalid archetype id".to_string()))
+            Err(CommandError::InvalidArchetype)
         );
     }
 
@@ -595,7 +587,7 @@ mod tests {
         let mut world = make_world();
         world.tiles.set_terrain(5, 5, TerrainType::Water);
         let spec = BuildableTerrainSpec { x: 5, y: 5 };
-        assert_eq!(spec.check(&world), Err(CommandError::TileOccupied));
+        assert_eq!(spec.check(&world), Err(CommandError::TerrainNotBuildable));
     }
 
     // ── CompositeSpec ───────────────────────────────────────────────────
@@ -663,7 +655,7 @@ mod tests {
         world.tiles.set_terrain(5, 5, TerrainType::Water);
         let registry = ArchetypeRegistry::new();
         let spec = build_spec(5, 5, 1, 1, ARCH_RES_SMALL_HOUSE, 100, &registry);
-        assert_eq!(spec.check(&world), Err(CommandError::TileOccupied));
+        assert_eq!(spec.check(&world), Err(CommandError::TerrainNotBuildable));
     }
 
     #[test]
@@ -736,7 +728,7 @@ mod tests {
             y: 2,
             rotation: 0,
         };
-        assert_eq!(validate_command(&world, &cmd), Err(CommandError::TileOccupied));
+        assert_eq!(validate_command(&world, &cmd), Err(CommandError::TerrainNotBuildable));
     }
 
     #[test]
@@ -760,10 +752,10 @@ mod tests {
             y: 4,
             rotation: 0,
         };
-        assert!(matches!(
+        assert_eq!(
             validate_command_with_registry(&world, Some(&registry), &cmd),
-            Err(CommandError::ValidationFailed(_))
-        ));
+            Err(CommandError::WrongZone)
+        );
     }
 
     #[test]

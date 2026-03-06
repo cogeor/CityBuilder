@@ -89,6 +89,14 @@ pub enum CommandError {
     InvalidValue,
     /// Generic validation failure with a descriptive message.
     ValidationFailed(String),
+    /// Archetype ID is not registered in the active registry.
+    InvalidArchetype,
+    /// Tile zone does not match the zone required by the archetype.
+    WrongZone,
+    /// Terrain type prevents construction (e.g. water, mountain).
+    TerrainNotBuildable,
+    /// Building requires an adjacent road but none is present.
+    NoRoadAccess,
 }
 
 /// Result of command application.
@@ -442,7 +450,7 @@ mod tests {
     }
 
     #[test]
-    fn place_entity_on_water_tile_occupied() {
+    fn place_entity_on_water_terrain_not_buildable() {
         let mut world = make_world();
         world.tiles.set_terrain(3, 3, TerrainType::Water);
         let cmd = Command::PlaceEntity {
@@ -451,7 +459,7 @@ mod tests {
             y: 3,
             rotation: 0,
         };
-        assert_eq!(apply_command(&mut world, &cmd), Err(CommandError::TileOccupied));
+        assert_eq!(apply_command(&mut world, &cmd), Err(CommandError::TerrainNotBuildable));
     }
 
     // ── RemoveEntity ────────────────────────────────────────────────────
