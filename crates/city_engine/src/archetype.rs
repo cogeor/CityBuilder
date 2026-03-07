@@ -21,6 +21,9 @@ pub enum EffectKind {
     Noise            = 7,
 }
 
+/// Number of distinct effect kinds (used to size fixed arrays).
+pub const EFFECT_KIND_COUNT: usize = 8;
+
 /// A single building effect.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Effect {

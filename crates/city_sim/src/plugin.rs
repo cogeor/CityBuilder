@@ -9,6 +9,7 @@ use crate::caches::cache_manager::CacheManager;
 use crate::events::EventBus;
 use crate::phase_wheel::PhaseWheel;
 use crate::sim_map::SimMapRegistry;
+use crate::systems::effects::EffectMap;
 use crate::systems::sim_tick::{SimRunState, SimTickSystem};
 use crate::world::WorldState;
 use crate::world_vars::WorldVars;
@@ -64,6 +65,7 @@ impl Plugin for SimCorePlugin {
         app.insert_resource(CacheManager::new());
         app.insert_resource(AnalysisMaps::new(w, h));
         app.insert_resource(SimMapRegistry::new(w as usize, h as usize));
+        app.insert_resource(EffectMap::new(w as u32, h as u32));
         app.insert_resource(PhaseWheel::new());
         app.insert_resource(SimRunState::new(self.config.seed));
         app.add_systems(Schedule::Tick, SimTickSystem);

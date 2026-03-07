@@ -10,6 +10,7 @@ use crate::events::EventBus;
 use crate::math::rng::Rng;
 use crate::systems::buildings::{DevelopmentConfig, DevelopmentState, compute_zone_demand, tick_zoned_development_with_config};
 use crate::systems::construction::tick_construction;
+use crate::systems::effects::{EffectMap, propagate_effects};
 use crate::systems::finance::tick_finance;
 use crate::systems::jobs::tick_jobs;
 use crate::systems::population::tick_population;
@@ -84,6 +85,17 @@ impl SimSystem for SimTickSystem {
             &mut world, &registry, tick, &mut run_state.rng,
             DevelopmentConfig::default(), dev_state, demand, None,
         );
+
+        // 6. Effects propagation (every 4 ticks)
+        if tick % 4 == 0 {
+            let mut effect_map = ctx.resources.remove::<EffectMap>()
+                .unwrap_or_else(|| {
+                    let s = world.map_size();
+                    EffectMap::new(s.width as u32, s.height as u32)
+                });
+            propagate_effects(&mut effect_map, &world.entities, &registry);
+            ctx.resources.insert(effect_map);
+        }
 
         // Update world tick
         world.tick = tick;
