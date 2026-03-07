@@ -158,6 +158,14 @@ impl StatusFlags {
     pub const fn is_empty(self) -> bool {
         self.0 == 0
     }
+
+    pub fn insert(&mut self, other: Self) {
+        self.0 |= other.0;
+    }
+
+    pub fn remove(&mut self, other: Self) {
+        self.0 &= !other.0;
+    }
 }
 
 impl std::ops::BitOr for StatusFlags {

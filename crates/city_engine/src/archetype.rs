@@ -80,6 +80,10 @@ pub struct ArchetypeDefinition {
     pub water_demand: u32,
     /// Water supply in units.
     pub water_supply: u32,
+    /// Water coverage radius in tiles (for pumps).
+    pub water_coverage_radius: u8,
+    /// Whether this building acts as a water pipe.
+    pub is_water_pipe: bool,
     /// Service radius in tiles.
     pub service_radius: u8,
     /// Desirability effect: radius and magnitude.
@@ -190,6 +194,7 @@ mod tests {
             base_upkeep_cents_per_tick: 10,
             power_demand_kw: 5, power_supply_kw: 0,
             water_demand: 2, water_supply: 0,
+            water_coverage_radius: 0, is_water_pipe: false,
             service_radius: 0,
             desirability_radius: 2, desirability_magnitude: 5,
             pollution: 0, noise: 1,
@@ -212,6 +217,7 @@ mod tests {
             base_upkeep_cents_per_tick: 50,
             power_demand_kw: 0, power_supply_kw: 5000,
             water_demand: 10, water_supply: 0,
+            water_coverage_radius: 0, is_water_pipe: false,
             service_radius: 0,
             desirability_radius: 5, desirability_magnitude: -20,
             pollution: 8, noise: 6,
@@ -234,6 +240,7 @@ mod tests {
             base_upkeep_cents_per_tick: 15,
             power_demand_kw: 10, power_supply_kw: 0,
             water_demand: 3, water_supply: 0,
+            water_coverage_radius: 0, is_water_pipe: false,
             service_radius: 0,
             desirability_radius: 3, desirability_magnitude: 3,
             pollution: 0, noise: 2,
