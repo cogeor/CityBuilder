@@ -206,6 +206,7 @@ pub fn build_compact_town(world: &mut WorldState) {
         if let Some(handle) = world.place_entity(1, x, y, 0) {
             world.entities.set_construction_progress(handle, 0xFFFF);
             world.entities.set_flags(handle, StatusFlags::POWERED | StatusFlags::WATER_CONNECTED);
+            world.tiles.set_kind(x as u32, y as u32, TileKind::Building);
         }
     }
 }

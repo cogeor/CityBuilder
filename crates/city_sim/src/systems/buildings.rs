@@ -283,6 +283,12 @@ pub fn tick_zoned_development_with_config(
         if let Some(_handle) = world.place_entity(archetype_id, x, y, 0) {
             world.treasury -= def.cost_at_level(1);
             mark_occupied(&mut occupied, map_size.width, x, y, def.footprint_w, def.footprint_h);
+            // Mark footprint tiles as Building so renderer shows building pattern
+            for dy in 0..def.footprint_h as i16 {
+                for dx in 0..def.footprint_w as i16 {
+                    world.tiles.set_kind((x + dx) as u32, (y + dy) as u32, crate::tilemap::TileKind::Building);
+                }
+            }
             placements += 1;
         }
     }

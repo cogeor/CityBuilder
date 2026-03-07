@@ -145,10 +145,15 @@ fn draw_road_line(world: &mut WorldState, road_net: &mut RoadNetwork, x0: i16, y
 }
 
 /// Place an entity and immediately mark it as fully constructed.
-fn place_completed(world: &mut WorldState, archetype_id: u16, x: i16, y: i16) {
+fn place_completed(world: &mut WorldState, archetype_id: u16, x: i16, y: i16, footprint: (u8, u8)) {
     if let Some(handle) = world.place_entity(archetype_id, x, y, 0) {
         world.entities.set_construction_progress(handle, 0xFFFF);
         world.entities.set_flags(handle, StatusFlags::NONE);
+        for dy in 0..footprint.1 as i16 {
+            for dx in 0..footprint.0 as i16 {
+                world.tiles.set_kind((x + dx) as u32, (y + dy) as u32, TileKind::Building);
+            }
+        }
     }
 }
 
@@ -204,19 +209,19 @@ pub fn build_small_town(world: &mut WorldState, road_net: &mut RoadNetwork) {
         }
     }
 
-    // Pre-placed houses in residential zone
+    // Pre-placed houses in residential zone (1x1)
     for &(x, y) in &[
         (410i16, 410i16), (420, 410), (430, 410),
         (510, 410), (520, 410), (530, 410),
     ] {
-        place_completed(world, 1, x, y); // Small House
+        place_completed(world, 1, x, y, (1, 1));
     }
-    // Shops in commercial zone
+    // Shops in commercial zone (1x1)
     for &(x, y) in &[(410i16, 470i16), (420, 470), (430, 470)] {
-        place_completed(world, 3, x, y); // Shop
+        place_completed(world, 3, x, y, (1, 1));
     }
-    // Power Plant at (410, 525)
-    place_completed(world, 2, 410, 525);
+    // Power Plant at (410, 525) (3x3)
+    place_completed(world, 2, 410, 525, (3, 3));
 }
 
 #[cfg(test)]
