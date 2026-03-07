@@ -1,0 +1,11 @@
+[package]
+name = "city_sim"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+city_core = { workspace = true }
+city_engine = { workspace = true }
+serde = { workspace = true }
+bitflags = { workspace = true }

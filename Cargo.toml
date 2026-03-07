@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/city_core",
     "crates/city_engine",
+    "crates/city_sim",
     "crates/city_render",
     "crates/city_game",
     "packages/engine-wasm",
@@ -15,8 +16,10 @@ license = "MIT"
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+bitflags = "2"
 city_core = { path = "crates/city_core" }
 city_engine = { path = "crates/city_engine" }
+city_sim = { path = "crates/city_sim" }
 city_render = { path = "crates/city_render" }
 
 [profile.release]
