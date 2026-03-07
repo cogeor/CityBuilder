@@ -1,12 +1,15 @@
 //! SimCorePlugin — initializes all simulation resources.
 
 use city_core::{App, MapSize, Plugin};
+use city_core::schedule::Schedule;
+use city_engine::archetype::ArchetypeRegistry;
 
 use crate::caches::analysis_maps::AnalysisMaps;
 use crate::caches::cache_manager::CacheManager;
 use crate::events::EventBus;
 use crate::phase_wheel::PhaseWheel;
 use crate::sim_map::SimMapRegistry;
+use crate::systems::sim_tick::{SimRunState, SimTickSystem};
 use crate::world::WorldState;
 use crate::world_vars::WorldVars;
 
@@ -54,6 +57,7 @@ impl Plugin for SimCorePlugin {
         let mut world = WorldState::new(size, self.config.seed);
         world.city_name = self.config.city_name.clone();
 
+        app.insert_resource(ArchetypeRegistry::new());
         app.insert_resource(world);
         app.insert_resource(WorldVars::default());
         app.insert_resource(EventBus::new());
@@ -61,6 +65,8 @@ impl Plugin for SimCorePlugin {
         app.insert_resource(AnalysisMaps::new(w, h));
         app.insert_resource(SimMapRegistry::new(w as usize, h as usize));
         app.insert_resource(PhaseWheel::new());
+        app.insert_resource(SimRunState::new(self.config.seed));
+        app.add_systems(Schedule::Tick, SimTickSystem);
     }
 }
 
