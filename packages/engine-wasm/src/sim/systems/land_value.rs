@@ -6,6 +6,8 @@
 //! wealth-density growth, rent calculation, and tax base computation.
 
 use crate::core::tilemap::{TileFlags, TileMap};
+use crate::core::world_vars::WorldVars;
+use crate::sim::sim_map::{SimMap, SimMapRegistry};
 
 /// Inputs for land value computation.
 #[derive(Debug, Clone, Default)]
@@ -126,6 +128,31 @@ pub fn compute_rent(land_value: u16) -> u32 {
 /// Compute tax base contribution from land value.
 pub fn compute_tax_base(land_value: u16, area: u16) -> u64 {
     land_value as u64 * area as u64
+}
+
+/// Compute anchor-based land value using the product-of-ratios formula.
+///
+/// Formula:
+///   congestion_penalty = world_vars.congestion_slope * TrafficDensity[tile]
+///   needs_met           = mean(ServiceHealth[tile], ServiceSafety[tile])
+///   land_value[tile]    = needs_met * (1 - Pollution[tile]) * (1 - congestion_penalty)
+///
+/// Writes results to `SimMap::LandValue` next buffer.
+/// Reads from `SimMap::ServiceHealth`, `SimMap::ServiceSafety`,
+/// `SimMap::TrafficDensity`, `SimMap::Pollution` current buffers.
+pub fn compute_anchor_land_value(maps: &mut SimMapRegistry, world_vars: &WorldVars) {
+    let n = maps.width() * maps.height();
+    maps.clear_next(SimMap::LandValue);
+    for i in 0..n {
+        let health    = maps.current(SimMap::ServiceHealth)[i];
+        let safety    = maps.current(SimMap::ServiceSafety)[i];
+        let traffic   = maps.current(SimMap::TrafficDensity)[i];
+        let pollution = maps.current(SimMap::Pollution)[i];
+        let congestion_penalty = (world_vars.congestion_slope * traffic).clamp(0.0, 1.0);
+        let needs_met = (health + safety) * 0.5;
+        let lv = needs_met * (1.0 - pollution) * (1.0 - congestion_penalty);
+        maps.next_mut(SimMap::LandValue)[i] = lv.clamp(0.0, 1.0);
+    }
 }
 
 // ---- Tests ---------------------------------------------------------------------
@@ -584,5 +611,32 @@ mod tests {
             result[0], expected,
             "No road access should yield same value as all-zero inputs"
         );
+    }
+
+    // ---- Test 23: Anchor land value — high service, no pollution ----
+
+    #[test]
+    fn anchor_land_value_high_service_no_pollution() {
+        use crate::core::world_vars::WorldVars;
+        use crate::sim::sim_map::{SimMap, SimMapRegistry};
+
+        let mut maps = SimMapRegistry::new(2, 1);
+        // Set ServiceHealth=0.8, ServiceSafety=0.9, TrafficDensity=0.1, Pollution=0.0
+        // on tile 0 in "next" buffer, then swap so they become "current"
+        maps.next_mut(SimMap::ServiceHealth)[0] = 0.8;
+        maps.next_mut(SimMap::ServiceSafety)[0] = 0.9;
+        maps.next_mut(SimMap::TrafficDensity)[0] = 0.1;
+        maps.next_mut(SimMap::Pollution)[0] = 0.0;
+        maps.swap();
+
+        let wv = WorldVars::default();
+        compute_anchor_land_value(&mut maps, &wv);
+        maps.swap();
+
+        let lv = maps.current(SimMap::LandValue)[0];
+        // needs_met = (0.8 + 0.9) / 2 = 0.85
+        // congestion = 0.2 * 0.1 = 0.02
+        // lv = 0.85 * 1.0 * 0.98 ≈ 0.833
+        assert!(lv > 0.8 && lv < 0.9, "expected ~0.833, got {}", lv);
     }
 }
