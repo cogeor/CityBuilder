@@ -13,6 +13,7 @@ pub mod mapgen;
 pub mod math_util;
 pub mod neighbors;
 pub mod network;
+pub mod predefined_maps;
 pub mod region;
 pub mod scale;
 pub mod stats_recorder;
