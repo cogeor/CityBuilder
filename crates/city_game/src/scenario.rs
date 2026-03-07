@@ -5,7 +5,7 @@ use city_engine::archetype::{ArchetypeDefinition, ArchetypeRegistry, ArchetypeTa
 use city_engine::engine::SimulationEngine;
 use city_engine::network::RoadNetwork;
 use city_render::instance::GpuInstance;
-use city_render::renderer;
+use city_render::renderer::{self, FrameData};
 use city_sim::plugin::{SimCorePlugin, SimConfig};
 use city_sim::tilemap::{TileKind, TileValue};
 use city_sim::types::{ZoneDensity, ZoneType};
@@ -52,14 +52,49 @@ pub fn build_instances(engine: &SimulationEngine, max_dim: u16) -> Vec<GpuInstan
     let mut tiles = Vec::with_capacity((w * h) as usize);
     for y in 0..h {
         for x in 0..w {
-            let pattern_id = match world.tiles.get(x, y) {
+            let color_id = match world.tiles.get(x, y) {
                 Some(tile) => tile_to_pattern(&tile),
                 None => 0,
             };
-            tiles.push((x as i16, y as i16, pattern_id));
+            tiles.push((x as i16, y as i16, color_id));
         }
     }
     renderer::build_terrain_instances(&tiles, max_dim)
+}
+
+/// Map archetype tag to sprite ID: 1=house, 2=shop, 3=factory, 4=civic.
+fn archetype_to_sprite(registry: &ArchetypeRegistry, arch_id: u16) -> u32 {
+    if let Some(def) = registry.get(arch_id) {
+        if def.has_tag(ArchetypeTag::Residential) { return 1; }
+        if def.has_tag(ArchetypeTag::Commercial) { return 2; }
+        if def.has_tag(ArchetypeTag::Industrial) { return 3; }
+        if def.has_tag(ArchetypeTag::Civic) { return 4; }
+    }
+    1 // fallback to house
+}
+
+/// Build complete frame data (terrain + sprites) from the current engine state.
+pub fn build_frame_data(engine: &SimulationEngine, max_dim: u16) -> FrameData {
+    let terrain = build_instances(engine, max_dim);
+
+    let world = engine.get_resource::<WorldState>().unwrap();
+    let registry = engine.get_resource::<ArchetypeRegistry>().unwrap();
+
+    let mut buildings = Vec::new();
+    for handle in world.entities.iter_alive() {
+        let flags = match world.entities.get_flags(handle) {
+            Some(f) => f,
+            None => continue,
+        };
+        if flags.contains(StatusFlags::UNDER_CONSTRUCTION) { continue; }
+        if let (Some(pos), Some(arch_id)) = (world.entities.get_pos(handle), world.entities.get_archetype(handle)) {
+            let sprite_id = archetype_to_sprite(registry, arch_id);
+            buildings.push((pos.x, pos.y, sprite_id));
+        }
+    }
+    let sprites = renderer::build_sprite_instances(&buildings, max_dim);
+
+    FrameData { terrain, sprites }
 }
 
 // ─── Archetypes ──────────────────────────────────────────────────────────────

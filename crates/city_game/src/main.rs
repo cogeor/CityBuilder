@@ -13,18 +13,19 @@ fn main() {
         engine.tick();
     }
 
-    let instances = scenario::build_instances(&engine, max_dim);
+    let frame = scenario::build_frame_data(&engine, max_dim);
     let (cam_x, cam_y) = projection::map_center_screen(map_size.width, map_size.height);
 
-    println!("City Builder — {}x{}, {} instances", map_size.width, map_size.height, instances.len());
+    println!("City Builder — {}x{}, {} terrain + {} sprites",
+        map_size.width, map_size.height, frame.terrain.len(), frame.sprites.len());
     println!("  Controls: WASD/Arrows pan, scroll zoom, Escape quit");
 
     let map_screen_width = max_dim as f32 * 64.0;
     let zoom = (map_screen_width / 1200.0).max(1.0);
     let cam_speed = max_dim as f32 * 4.0;
 
-    renderer::run_with_sim(instances, cam_x, cam_y, cam_speed, zoom, 10.0, move || {
+    renderer::run_with_sim(frame.terrain, frame.sprites, cam_x, cam_y, cam_speed, zoom, 10.0, move || {
         engine.tick();
-        scenario::build_instances(&engine, max_dim)
+        scenario::build_frame_data(&engine, max_dim)
     });
 }

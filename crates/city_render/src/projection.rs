@@ -31,14 +31,14 @@ pub fn map_center_screen(width: u16, height: u16) -> (f32, f32) {
     )
 }
 
-/// Compute z-order for a tile (back-to-front painter ordering).
-/// Tiles with higher x+y are in front.
+/// Compute z-order for depth buffer (LessEqual: lower z = closer to camera).
+/// Tiles with higher x+y are in front (closer), so they get lower z.
 #[inline]
 pub fn tile_z_order(x: i16, y: i16, map_size: u16) -> f32 {
     let max_sum = (map_size as f32) * 2.0;
     let sum = (x + y) as f32;
-    // Normalize to 0..1, with 0 = furthest back
-    sum / max_sum
+    // Invert: closer tiles (high x+y) get lower z → win depth test
+    1.0 - sum / max_sum
 }
 
 /// Terrain color palette — one color per terrain ID.
