@@ -29,6 +29,9 @@ use crate::sim::systems::utility_registry::UtilityRegistry;
 use crate::sim::systems::utility_system::{ElectricitySystem, HealthCareSystem, WaterSystem};
 use crate::sim::systems::city_events::CityEventState;
 use crate::sim::systems::transport::TrafficGrid;
+use crate::core::world_vars::WorldVars;
+use crate::sim::sim_map::SimMapRegistry;
+use crate::sim::sim_pipeline::run_overlay_pipeline;
 
 /// Output produced by a single simulation tick.
 #[derive(Debug)]
@@ -77,6 +80,10 @@ pub struct SimulationEngine {
     pub effect_map: EffectMap,
     /// Derived analysis overlays — rebuilt from EffectMap on the Effects phase.
     pub analysis_maps: AnalysisMaps,
+    /// Named scalar maps for the overlay pipeline (service, traffic, land value, etc.).
+    pub sim_maps: SimMapRegistry,
+    /// Real-world anchor parameters for simulation formulas.
+    pub world_vars: WorldVars,
     /// Queue of commands applied during phase 1 of the next tick.
     pub pending_commands: Vec<Command>,
     /// Cache dirty tracking and invalidation map.
@@ -121,6 +128,8 @@ impl SimulationEngine {
             utilities,
             effect_map: EffectMap::new(map_w, map_h),
             analysis_maps: AnalysisMaps::new(map_size.width, map_size.height),
+            sim_maps: SimMapRegistry::new(map_size.width as usize, map_size.height as usize),
+            world_vars: WorldVars::default(),
             pending_commands: Vec::new(),
             cache_manager: CacheManager::new(),
             plugins: vec![
@@ -236,6 +245,19 @@ impl SimulationEngine {
         if self.phase_wheel.should_run_expensive(tick, Phase::Utilities) {
             propagate_effects(&mut self.effect_map, &self.world.entities, &self.registry);
             self.analysis_maps.rebuild_from_effects(&self.effect_map);
+        }
+
+        // Phase 3d: run overlay pipeline (service coverage, traffic, land value).
+        // All float logic is in sim_pipeline.rs; tick.rs stays float-free.
+        if self.phase_wheel.should_run_expensive(tick, Phase::Utilities) {
+            run_overlay_pipeline(
+                &mut self.sim_maps,
+                &self.world.entities,
+                &self.registry,
+                &self.world.tiles,
+                &self.effect_map,
+                &self.world_vars,
+            );
         }
 
         // 11. Adapt phase wheel (placeholder: 0 microseconds measured).

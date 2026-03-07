@@ -31,6 +31,7 @@ fn idx(m: SimMap) -> usize {
 /// Double-buffered registry of named f32 scalar maps.
 /// During a tick, systems read `current()` and write `next_mut()`.
 /// Call `swap()` once all systems have finished.
+#[derive(Debug)]
 pub struct SimMapRegistry {
     // For each SimMap variant: two buffers [current=0, next=1]
     buffers: [[Vec<f32>; 2]; SIM_MAP_COUNT],

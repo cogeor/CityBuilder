@@ -7,6 +7,7 @@ pub mod scheduler;
 pub mod scheduling;
 pub mod systems;
 pub mod sim_map;
+pub mod sim_pipeline;
 pub mod speed;
 pub mod tick;
 
