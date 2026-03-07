@@ -8,21 +8,18 @@ use bytemuck::{Pod, Zeroable};
 pub struct GpuInstance {
     /// Screen position in pixels (isometric projected).
     pub screen_pos: [f32; 2],
-    /// RGBA color (0.0-1.0).
-    pub color: [f32; 4],
     /// Depth sort key (0.0-1.0, lower = further back).
     pub z_order: f32,
-    /// Padding to align to 32 bytes.
-    pub _pad: f32,
+    /// Pattern ID — indexes into the pattern uniform array.
+    pub pattern_id: u32,
 }
 
 impl GpuInstance {
-    pub fn new(screen_x: f32, screen_y: f32, color: [f32; 4], z_order: f32) -> Self {
+    pub fn new(screen_x: f32, screen_y: f32, z_order: f32, pattern_id: u32) -> Self {
         Self {
             screen_pos: [screen_x, screen_y],
-            color,
             z_order,
-            _pad: 0.0,
+            pattern_id,
         }
     }
 }

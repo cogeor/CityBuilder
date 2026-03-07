@@ -2,6 +2,7 @@
 
 use crate::instance::{GpuInstance, Uniforms};
 use crate::projection;
+use crate::tile_visuals::{GpuPattern, TileVisualRegistry, MAX_PATTERNS};
 use std::sync::Arc;
 use wgpu::util::DeviceExt;
 use winit::application::ApplicationHandler;
@@ -41,16 +42,15 @@ impl Camera {
 
 /// Build GPU instances from a flat slice of tile data.
 ///
-/// Each element is `(x, y, terrain_id)`. `max_dim` is the maximum of map width
+/// Each element is `(x, y, pattern_id)`. `max_dim` is the maximum of map width
 /// and height, used for z-ordering.
-pub fn build_terrain_instances(tiles: &[(i16, i16, u8)], max_dim: u16) -> Vec<GpuInstance> {
+pub fn build_terrain_instances(tiles: &[(i16, i16, u32)], max_dim: u16) -> Vec<GpuInstance> {
     let mut instances = Vec::with_capacity(tiles.len());
 
-    for &(x, y, terrain) in tiles {
+    for &(x, y, pattern_id) in tiles {
         let (sx, sy) = projection::tile_to_screen(x, y);
-        let color = projection::terrain_color(terrain);
         let z = projection::tile_z_order(x, y, max_dim);
-        instances.push(GpuInstance::new(sx, sy, color, z));
+        instances.push(GpuInstance::new(sx, sy, z, pattern_id));
     }
 
     instances
@@ -66,15 +66,17 @@ struct RenderState {
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     instance_buffer: wgpu::Buffer,
+    instance_buffer_capacity: usize,
     uniform_buffer: wgpu::Buffer,
-    uniform_bind_group: wgpu::BindGroup,
+    pattern_buffer: wgpu::Buffer,
+    bind_group: wgpu::BindGroup,
+    bind_group_layout: wgpu::BindGroupLayout,
     num_indices: u32,
     instance_count: u32,
     size: PhysicalSize<u32>,
 }
 
 /// The isometric diamond quad — 4 vertices forming a diamond shape.
-/// Positions are in [-0.5, 0.5] range, scaled by TILE_W/TILE_H in the shader.
 fn diamond_vertices() -> [f32; 8] {
     [
         0.0, -0.5,  // top
@@ -91,6 +93,7 @@ fn diamond_indices() -> [u16; 6] {
 fn create_render_state(
     window: Arc<Window>,
     instances: &[GpuInstance],
+    visuals: &TileVisualRegistry,
 ) -> RenderState {
     let size = window.inner_size();
 
@@ -158,11 +161,11 @@ fn create_render_state(
         usage: wgpu::BufferUsages::INDEX,
     });
 
-    // Instance buffer
+    // Instance buffer (writable for live updates)
     let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("instance_buffer"),
         contents: bytemuck::cast_slice(instances),
-        usage: wgpu::BufferUsages::VERTEX,
+        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
     });
 
     // Uniform buffer
@@ -173,28 +176,53 @@ fn create_render_state(
         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
     });
 
-    // Bind group layout + bind group
-    let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: Some("uniform_bind_group_layout"),
-        entries: &[wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::VERTEX,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
-            },
-            count: None,
-        }],
+    // Pattern uniform buffer
+    let pattern_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("pattern_buffer"),
+        contents: bytemuck::cast_slice(visuals.as_gpu_array()),
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
     });
 
-    let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("uniform_bind_group"),
+    // Bind group layout: binding 0 = uniforms (vertex), binding 1 = patterns (fragment)
+    let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("bind_group_layout"),
+        entries: &[
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+        ],
+    });
+
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("bind_group"),
         layout: &bind_group_layout,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: uniform_buffer.as_entire_binding(),
-        }],
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: pattern_buffer.as_entire_binding(),
+            },
+        ],
     });
 
     // Pipeline layout
@@ -225,17 +253,17 @@ fn create_render_state(
                 shader_location: 1,
                 format: wgpu::VertexFormat::Float32x2,
             },
-            // color: vec4<f32>
+            // z_order: f32
             wgpu::VertexAttribute {
                 offset: 8,
                 shader_location: 2,
-                format: wgpu::VertexFormat::Float32x4,
-            },
-            // z_order: f32
-            wgpu::VertexAttribute {
-                offset: 24,
-                shader_location: 3,
                 format: wgpu::VertexFormat::Float32,
+            },
+            // pattern_id: u32
+            wgpu::VertexAttribute {
+                offset: 12,
+                shader_location: 3,
+                format: wgpu::VertexFormat::Uint32,
             },
         ],
     };
@@ -284,11 +312,31 @@ fn create_render_state(
         vertex_buffer,
         index_buffer,
         instance_buffer,
-        uniform_bind_group,
+        instance_buffer_capacity: instances.len(),
         uniform_buffer,
+        pattern_buffer,
+        bind_group,
+        bind_group_layout,
         num_indices: indices.len() as u32,
         instance_count: instances.len() as u32,
         size,
+    }
+}
+
+impl RenderState {
+    /// Update the instance buffer with new data. Recreates if capacity changed.
+    fn update_instances(&mut self, instances: &[GpuInstance]) {
+        self.instance_count = instances.len() as u32;
+        if instances.len() <= self.instance_buffer_capacity {
+            self.queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(instances));
+        } else {
+            self.instance_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("instance_buffer"),
+                contents: bytemuck::cast_slice(instances),
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            });
+            self.instance_buffer_capacity = instances.len();
+        }
     }
 }
 
@@ -297,6 +345,7 @@ pub struct IsometricApp {
     state: Option<RenderState>,
     window: Option<Arc<Window>>,
     instances: Vec<GpuInstance>,
+    visuals: TileVisualRegistry,
     camera: Camera,
     last_frame: std::time::Instant,
 }
@@ -310,8 +359,17 @@ impl IsometricApp {
             state: None,
             window: None,
             instances,
+            visuals: TileVisualRegistry::new(),
             camera,
             last_frame: std::time::Instant::now(),
+        }
+    }
+
+    /// Update the instance buffer with new tile data.
+    pub fn update_instances(&mut self, instances: Vec<GpuInstance>) {
+        self.instances = instances;
+        if let Some(state) = self.state.as_mut() {
+            state.update_instances(&self.instances);
         }
     }
 
@@ -366,7 +424,7 @@ impl IsometricApp {
             });
 
             pass.set_pipeline(&state.pipeline);
-            pass.set_bind_group(0, &state.uniform_bind_group, &[]);
+            pass.set_bind_group(0, &state.bind_group, &[]);
             pass.set_vertex_buffer(0, state.vertex_buffer.slice(..));
             pass.set_vertex_buffer(1, state.instance_buffer.slice(..));
             pass.set_index_buffer(state.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
@@ -399,7 +457,7 @@ impl ApplicationHandler for IsometricApp {
                 .with_title("City Builder — Isometric Terrain")
                 .with_inner_size(PhysicalSize::new(1280u32, 720u32));
             let window = Arc::new(event_loop.create_window(attrs).unwrap());
-            let state = create_render_state(window.clone(), &self.instances);
+            let state = create_render_state(window.clone(), &self.instances, &self.visuals);
             self.state = Some(state);
             self.window = Some(window);
             self.last_frame = std::time::Instant::now();
@@ -432,6 +490,14 @@ impl ApplicationHandler for IsometricApp {
                     _ => {}
                 }
             }
+            WindowEvent::MouseWheel { delta, .. } => {
+                let scroll = match delta {
+                    winit::event::MouseScrollDelta::LineDelta(_, y) => y,
+                    winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32 / 50.0,
+                };
+                let factor = if scroll > 0.0 { 0.9 } else { 1.1 };
+                self.camera.zoom = (self.camera.zoom * factor).clamp(1.0, 200.0);
+            }
             WindowEvent::RedrawRequested => {
                 self.render();
             }
@@ -446,8 +512,6 @@ pub fn run(instances: Vec<GpuInstance>, cam_x: f32, cam_y: f32) {
 }
 
 /// Run the isometric renderer with custom camera speed and zoom.
-///
-/// `zoom`: world-pixels per screen-pixel. Higher = more zoomed out.
 pub fn run_with_options(instances: Vec<GpuInstance>, cam_x: f32, cam_y: f32, cam_speed: f32, zoom: f32) {
     env_logger::init();
     let event_loop = EventLoop::new().unwrap();

@@ -338,6 +338,7 @@ dependencies = [
  "city_core",
  "city_engine",
  "city_render",
+ "city_sim",
  "rand",
 ]
 
@@ -353,6 +354,16 @@ dependencies = [
  "rand",
  "wgpu",
  "winit",
+]
+
+[[package]]
+name = "city_sim"
+version = "0.1.0"
+dependencies = [
+ "bitflags 2.11.0",
+ "city_core",
+ "city_engine",
+ "serde",
 ]
 
 [[package]]

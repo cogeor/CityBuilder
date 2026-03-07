@@ -9,9 +9,44 @@ use city_render::projection;
 use city_render::renderer;
 use city_sim::plugin::{SimCorePlugin, SimConfig};
 use city_sim::mapgen;
-use city_sim::tilemap::TileKind;
+use city_sim::tilemap::{TileKind, TileValue};
 use city_sim::types::ZoneType;
 use city_sim::world::WorldState;
+
+/// Map a tile to its GPU pattern ID.
+///
+/// Pattern ID layout (matches TileVisualRegistry):
+///   0-4:   Terrain (Grass, Water, Sand, Forest, Rock)
+///   7:     Road
+///  11-16:  Zones (empty — Residential, Commercial, Industrial, Civic, Park, Transport)
+///  21-24:  Buildings (occupied — Residential, Commercial, Industrial, Civic)
+fn tile_to_pattern(tile: &TileValue) -> u32 {
+    match tile.kind {
+        TileKind::Road => 7,
+        TileKind::Building => {
+            // Occupied zone → building pattern (20 + zone_type)
+            match tile.zone {
+                ZoneType::Residential => 21,
+                ZoneType::Commercial  => 22,
+                ZoneType::Industrial  => 23,
+                ZoneType::Civic       => 24,
+                _ => 0,
+            }
+        }
+        _ => {
+            // Zoned but not yet built → zone pattern (10 + zone_type)
+            match tile.zone {
+                ZoneType::None        => 0,  // Grass
+                ZoneType::Residential => 11,
+                ZoneType::Commercial  => 12,
+                ZoneType::Industrial  => 13,
+                ZoneType::Civic       => 14,
+                ZoneType::Park        => 15,
+                ZoneType::Transport   => 16,
+            }
+        }
+    }
+}
 
 fn main() {
     let empty = std::env::args().any(|a| a == "--empty");
@@ -69,7 +104,7 @@ fn main() {
     println!("  Simulated 100 warmup ticks");
 
     // Build tile data from world state AFTER warmup (so we see developed buildings)
-    let tiles: Vec<(i16, i16, u8)> = {
+    let tiles: Vec<(i16, i16, u32)> = {
         let world = engine.get_resource::<WorldState>().unwrap();
         let entity_count = world.entities.iter_alive().count();
         println!("  Entities after warmup: {}", entity_count);
@@ -80,20 +115,11 @@ fn main() {
         let mut out = Vec::with_capacity((w * h) as usize);
         for y in 0..h {
             for x in 0..w {
-                let color_id = match world.tiles.get(x, y) {
-                    Some(tile) => {
-                        if tile.kind == TileKind::Road {
-                            7 // Road — grey
-                        } else {
-                            match tile.zone {
-                                ZoneType::None => 0,       // Grass
-                                other => 10 + other as u8, // Zone overlay colors
-                            }
-                        }
-                    },
+                let pattern_id = match world.tiles.get(x, y) {
+                    Some(tile) => tile_to_pattern(&tile),
                     None => 0,
                 };
-                out.push((x as i16, y as i16, color_id));
+                out.push((x as i16, y as i16, pattern_id));
             }
         }
         out

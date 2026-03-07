@@ -91,18 +91,31 @@ pub fn register_default_archetypes(registry: &mut ArchetypeRegistry) {
     });
 }
 
-/// Draw a straight road line between two points, setting tile kind + flags.
+/// Draw a 3-tile-wide road line between two points, setting tile kind + flags.
 /// Also adds segments to the road network and marks adjacent tiles with ROAD_ACCESS.
 fn draw_road_line(world: &mut WorldState, road_net: &mut RoadNetwork, x0: i16, y0: i16, x1: i16, y1: i16) {
     let (dx, dy) = ((x1 - x0).signum(), (y1 - y0).signum());
     let (mut x, mut y) = (x0, y0);
     let mut prev: Option<(i16, i16)> = None;
-    loop {
-        // Set this tile as road
-        world.tiles.set_kind(x as u32, y as u32, TileKind::Road);
-        world.tiles.set_flags(x as u32, y as u32, TileFlags::ROAD_ACCESS);
 
-        // Add segment to road network
+    // Perpendicular offsets for 3-tile width
+    let is_horizontal = dy == 0;
+
+    loop {
+        // Set 3-tile-wide road (center + 1 each side perpendicular)
+        for offset in -1..=1i16 {
+            let (rx, ry) = if is_horizontal {
+                (x, y + offset)
+            } else {
+                (x + offset, y)
+            };
+            if rx >= 0 && ry >= 0 {
+                world.tiles.set_kind(rx as u32, ry as u32, TileKind::Road);
+                world.tiles.set_flags(rx as u32, ry as u32, TileFlags::ROAD_ACCESS);
+            }
+        }
+
+        // Add segment to road network (center line only)
         if let Some((px, py)) = prev {
             road_net.add_segment(
                 city_core::TileCoord::new(px, py),
@@ -110,10 +123,17 @@ fn draw_road_line(world: &mut WorldState, road_net: &mut RoadNetwork, x0: i16, y
             );
         }
 
-        // Mark cardinal neighbors with ROAD_ACCESS
-        for &(nx, ny) in &[(x-1, y), (x+1, y), (x, y-1), (x, y+1)] {
-            if nx >= 0 && ny >= 0 {
-                world.tiles.set_flags(nx as u32, ny as u32, TileFlags::ROAD_ACCESS);
+        // Mark neighbors beyond the 3-tile width with ROAD_ACCESS
+        for offset in -2..=2i16 {
+            let tiles: [(i16, i16); 2] = if is_horizontal {
+                [(x, y + offset), (x, y + offset)]
+            } else {
+                [(x + offset, y), (x + offset, y)]
+            };
+            for &(nx, ny) in &tiles {
+                if nx >= 0 && ny >= 0 {
+                    world.tiles.set_flags(nx as u32, ny as u32, TileFlags::ROAD_ACCESS);
+                }
             }
         }
 
