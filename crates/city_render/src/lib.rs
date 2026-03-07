@@ -5,3 +5,4 @@
 pub mod instance;
 pub mod projection;
 pub mod renderer;
+pub mod tile_visuals;
