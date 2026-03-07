@@ -12,5 +12,6 @@ path = "src/main.rs"
 [dependencies]
 city_core = { workspace = true }
 city_engine = { workspace = true }
+city_sim = { workspace = true }
 city_render = { workspace = true }
 rand = "0.8"

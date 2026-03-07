@@ -1,4 +1,4 @@
-use city_core::{ArchetypeId, EntityHandle, MapSize, MoneyCents, Tick, TileCoord};
+use city_core::{ArchetypeId, EntityHandle, MapSize, MoneyCents, Tick};
 use city_engine::entity::EntityStore;
 use serde::{Deserialize, Serialize};
 
@@ -125,6 +125,7 @@ impl WorldState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use city_core::TileCoord;
     use crate::tilemap::{TileFlags, TileKind, TileValue};
     use crate::types::{ZoneDensity, ZoneType};
 
