@@ -52,6 +52,11 @@ impl SimulationEngine {
     pub fn current_tick(&self) -> Tick {
         self.tick
     }
+
+    /// Get a reference to a resource by type.
+    pub fn get_resource<R: Send + Sync + 'static>(&self) -> Option<&R> {
+        self.resources.get::<R>()
+    }
 }
 
 #[cfg(test)]

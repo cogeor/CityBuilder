@@ -61,9 +61,20 @@ fn main() {
         println!("  Treasury: ${:.2}", world.treasury as f64 / 100.0);
     }
 
-    // Build tile data from world state — zones get distinct colors
+    // Run warmup simulation ticks
+    let mut engine = SimulationEngine::from_app(app);
+    for _ in 0..100 {
+        engine.tick();
+    }
+    println!("  Simulated 100 warmup ticks");
+
+    // Build tile data from world state AFTER warmup (so we see developed buildings)
     let tiles: Vec<(i16, i16, u8)> = {
-        let world = app.get_resource::<WorldState>().unwrap();
+        let world = engine.get_resource::<WorldState>().unwrap();
+        let entity_count = world.entities.iter_alive().count();
+        println!("  Entities after warmup: {}", entity_count);
+        println!("  Treasury after warmup: ${:.2}", world.treasury as f64 / 100.0);
+
         let w = world.tiles.width();
         let h = world.tiles.height();
         let mut out = Vec::with_capacity((w * h) as usize);
@@ -87,13 +98,6 @@ fn main() {
         }
         out
     };
-
-    // Run warmup simulation ticks
-    let mut engine = SimulationEngine::from_app(app);
-    for _ in 0..100 {
-        engine.tick();
-    }
-    println!("  Simulated 100 warmup ticks");
 
     // Build render instances
     let max_dim = map_size.width.max(map_size.height);
