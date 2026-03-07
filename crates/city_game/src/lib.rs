@@ -1,6 +1,6 @@
 //! city_game — Game assembly crate.
 //!
-//! This is the binary crate that wires together all plugins
-//! and runs the city builder game.
+//! Wires together simulation, rendering, and scenario setup.
 
 pub mod plugins;
+pub mod scenario;
