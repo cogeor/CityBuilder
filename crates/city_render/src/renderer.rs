@@ -348,10 +348,14 @@ pub struct IsometricApp {
     visuals: TileVisualRegistry,
     camera: Camera,
     last_frame: std::time::Instant,
-    /// Optional per-frame callback that returns new instances (e.g. after sim tick).
-    on_frame: Option<Box<dyn FnMut() -> Vec<GpuInstance>>>,
-    frame_counter: u32,
-    sim_interval: u32,
+    /// Optional callback: called once per sim tick, returns new instances.
+    on_tick: Option<Box<dyn FnMut() -> Vec<GpuInstance>>>,
+    /// Accumulated time for fixed-timestep sim ticks.
+    sim_accumulator: f32,
+    /// Sim ticks per second (default 10).
+    pub sim_ticks_per_sec: f32,
+    /// Max sim ticks per render frame (prevents spiral of death).
+    max_ticks_per_frame: u32,
 }
 
 impl IsometricApp {
@@ -366,29 +370,42 @@ impl IsometricApp {
             visuals: TileVisualRegistry::new(),
             camera,
             last_frame: std::time::Instant::now(),
-            on_frame: None,
-            frame_counter: 0,
-            sim_interval: 4, // tick sim every N render frames
+            on_tick: None,
+            sim_accumulator: 0.0,
+            sim_ticks_per_sec: 10.0,
+            max_ticks_per_frame: 5,
         }
     }
 
-    /// Set a per-frame callback that ticks the simulation and returns new instances.
-    pub fn set_on_frame(&mut self, callback: impl FnMut() -> Vec<GpuInstance> + 'static) {
-        self.on_frame = Some(Box::new(callback));
+    /// Set a per-tick callback that advances the simulation and returns new instances.
+    pub fn set_on_tick(&mut self, callback: impl FnMut() -> Vec<GpuInstance> + 'static) {
+        self.on_tick = Some(Box::new(callback));
     }
 
     fn render(&mut self) {
         // Update camera
         let now = std::time::Instant::now();
-        let dt = (now - self.last_frame).as_secs_f32();
+        let dt = (now - self.last_frame).as_secs_f32().min(0.1); // cap to avoid spiral
         self.last_frame = now;
         self.camera.update(dt);
 
-        // Tick simulation and rebuild instances periodically
-        self.frame_counter += 1;
-        if self.frame_counter % self.sim_interval == 0 {
-            if let Some(callback) = self.on_frame.as_mut() {
+        // Fixed-timestep simulation ticks
+        if let Some(callback) = self.on_tick.as_mut() {
+            self.sim_accumulator += dt;
+            let tick_dt = 1.0 / self.sim_ticks_per_sec;
+            let mut ticked = false;
+            let mut ticks_this_frame = 0u32;
+            while self.sim_accumulator >= tick_dt && ticks_this_frame < self.max_ticks_per_frame {
+                self.sim_accumulator -= tick_dt;
                 self.instances = callback();
+                ticked = true;
+                ticks_this_frame += 1;
+            }
+            // Clamp accumulator to prevent buildup
+            if self.sim_accumulator > tick_dt {
+                self.sim_accumulator = tick_dt;
+            }
+            if ticked {
                 if let Some(state) = self.state.as_mut() {
                     state.update_instances(&self.instances);
                 }
@@ -536,17 +553,20 @@ pub fn run_with_options(instances: Vec<GpuInstance>, cam_x: f32, cam_y: f32, cam
 
 /// Run the renderer with a live simulation callback.
 ///
-/// `on_frame` is called every few render frames; it should tick the sim
-/// and return the new instance list.
+/// `on_tick` is called at a fixed rate (`ticks_per_sec`), decoupled from
+/// the render frame rate. It should advance the sim by one tick and return
+/// the new instance list.
 pub fn run_with_sim(
     instances: Vec<GpuInstance>,
     cam_x: f32, cam_y: f32,
     cam_speed: f32, zoom: f32,
-    on_frame: impl FnMut() -> Vec<GpuInstance> + 'static,
+    ticks_per_sec: f32,
+    on_tick: impl FnMut() -> Vec<GpuInstance> + 'static,
 ) {
     env_logger::init();
     let event_loop = EventLoop::new().unwrap();
     let mut app = IsometricApp::new(instances, cam_x, cam_y, cam_speed, zoom);
-    app.set_on_frame(on_frame);
+    app.sim_ticks_per_sec = ticks_per_sec;
+    app.set_on_tick(on_tick);
     event_loop.run_app(&mut app).unwrap();
 }

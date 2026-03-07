@@ -125,8 +125,8 @@ fn main() {
     let zoom = (map_screen_width / 800.0).max(1.0);
     let cam_speed = max_dim as f32 * 4.0;
 
-    // Run with live simulation — engine ticks every few render frames
-    renderer::run_with_sim(instances, cam_x, cam_y, cam_speed, zoom, move || {
+    // Run with live simulation — 10 sim ticks per second, decoupled from frame rate
+    renderer::run_with_sim(instances, cam_x, cam_y, cam_speed, zoom, 10.0, move || {
         engine.tick();
         build_instances_from_engine(&engine, max_dim)
     });
