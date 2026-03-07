@@ -3,20 +3,22 @@ use city_core::terrain::TerrainRegistry;
 use city_core::MapSize;
 use city_engine::archetype::ArchetypeRegistry;
 use city_engine::engine::SimulationEngine;
+use city_engine::network::RoadNetwork;
 use city_game::plugins::terrain::TerrainPlugin;
 use city_render::projection;
 use city_render::renderer;
 use city_sim::plugin::{SimCorePlugin, SimConfig};
 use city_sim::mapgen;
+use city_sim::tilemap::TileKind;
+use city_sim::types::ZoneType;
 use city_sim::world::WorldState;
 
 fn main() {
-    let use_predefined = std::env::args().any(|a| a == "--small-town");
-
-    let map_size = if use_predefined {
+    let empty = std::env::args().any(|a| a == "--empty");
+    let map_size = if empty {
         MapSize::new(100, 100)
     } else {
-        MapSize::new(100, 100)
+        MapSize::new(1000, 1000)
     };
 
     // Build app with plugins
@@ -28,27 +30,28 @@ fn main() {
         city_name: "New Town".into(),
     }));
 
-    // Register default archetypes and optionally load predefined map
+    // Register default archetypes
     {
         let registry = app.get_resource_mut::<ArchetypeRegistry>().unwrap();
         mapgen::register_default_archetypes(registry);
     }
-    if use_predefined {
-        let world = app.get_resource_mut::<WorldState>().unwrap();
-        mapgen::build_small_town(world);
-        println!("Loaded predefined map: small_town");
+
+    // Insert RoadNetwork resource
+    app.insert_resource(RoadNetwork::new());
+
+    // Load small town by default
+    if !empty {
+        let mut world = app.remove_resource::<WorldState>().unwrap();
+        let mut road_net = app.remove_resource::<RoadNetwork>().unwrap();
+        mapgen::build_small_town(&mut world, &mut road_net);
+        app.insert_resource(world);
+        app.insert_resource(road_net);
     }
 
-    // Print terrain info
+    // Print info
     let terrain_reg = app.get_resource::<TerrainRegistry>().unwrap();
-    let terrain_count = terrain_reg.count() as u8;
     println!("City Builder Engine — Simulation + Renderer");
-    println!("  Terrain types: {}", terrain_count);
-    for t in terrain_reg.all() {
-        println!("    [{}] {}", t.id, t.name);
-    }
-
-    // Print world info
+    println!("  Terrain types: {}", terrain_reg.count());
     {
         let world = app.get_resource::<WorldState>().unwrap();
         let size = world.map_size();
@@ -58,41 +61,54 @@ fn main() {
         println!("  Treasury: ${:.2}", world.treasury as f64 / 100.0);
     }
 
-    // Run a few simulation ticks before rendering
+    // Build tile data from world state — zones get distinct colors
+    let tiles: Vec<(i16, i16, u8)> = {
+        let world = app.get_resource::<WorldState>().unwrap();
+        let w = world.tiles.width();
+        let h = world.tiles.height();
+        let mut out = Vec::with_capacity((w * h) as usize);
+        for y in 0..h {
+            for x in 0..w {
+                let color_id = match world.tiles.get(x, y) {
+                    Some(tile) => {
+                        if tile.kind == TileKind::Road {
+                            7 // Road — grey
+                        } else {
+                            match tile.zone {
+                                ZoneType::None => 0,       // Grass
+                                other => 10 + other as u8, // Zone overlay colors
+                            }
+                        }
+                    },
+                    None => 0,
+                };
+                out.push((x as i16, y as i16, color_id));
+            }
+        }
+        out
+    };
+
+    // Run warmup simulation ticks
     let mut engine = SimulationEngine::from_app(app);
-    let warmup_ticks = if use_predefined { 100 } else { 0 };
-    for _ in 0..warmup_ticks {
+    for _ in 0..100 {
         engine.tick();
     }
-    if warmup_ticks > 0 {
-        println!("  Simulated {} warmup ticks", warmup_ticks);
-    }
-
-    // Build tile data for rendering from the world state
-    // After SimulationEngine::from_app, resources are inside the engine.
-    // For now, build a simple terrain-only render from map size.
-    let size = map_size;
-    let mut tiles: Vec<(i16, i16, u8)> = Vec::with_capacity(size.tile_count() as usize);
-    let mut rng = rand::thread_rng();
-    use rand::Rng;
-    for y in 0..size.height as i16 {
-        for x in 0..size.width as i16 {
-            let terrain_id = rng.gen_range(0..terrain_count);
-            tiles.push((x, y, terrain_id));
-        }
-    }
+    println!("  Simulated 100 warmup ticks");
 
     // Build render instances
-    let max_dim = size.width.max(size.height);
+    let max_dim = map_size.width.max(map_size.height);
     let instances = renderer::build_terrain_instances(&tiles, max_dim);
     println!("  Instances: {}", instances.len());
 
-    // Compute camera start position (center of map)
-    let (cam_x, cam_y) = projection::map_center_screen(size.width, size.height);
+    let (cam_x, cam_y) = projection::map_center_screen(map_size.width, map_size.height);
     println!("  Camera: ({:.0}, {:.0})", cam_x, cam_y);
     println!("  Controls: WASD/Arrows to pan, Escape to quit");
     println!();
 
-    // Launch renderer
-    renderer::run(instances, cam_x, cam_y);
+    // Zoom out so full map fits in ~800px window
+    // Isometric map width in pixels ≈ max_dim * TILE_W (64)
+    let map_screen_width = max_dim as f32 * 64.0;
+    let zoom = (map_screen_width / 800.0).max(1.0);
+    let cam_speed = max_dim as f32 * 4.0;
+    renderer::run_with_options(instances, cam_x, cam_y, cam_speed, zoom);
 }

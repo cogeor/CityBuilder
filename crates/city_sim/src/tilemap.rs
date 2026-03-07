@@ -245,6 +245,16 @@ impl TileMap {
     }
 
     #[inline]
+    pub fn set_kind(&mut self, x: u32, y: u32, kind: TileKind) -> bool {
+        if let Some(t) = self.get_mut(x, y) {
+            t.kind = kind;
+            true
+        } else {
+            false
+        }
+    }
+
+    #[inline]
     pub fn set_terrain(&mut self, x: u32, y: u32, terrain: TerrainType) -> bool {
         if let Some(t) = self.get_mut(x, y) {
             t.terrain = terrain;

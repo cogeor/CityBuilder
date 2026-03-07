@@ -87,6 +87,11 @@ impl App {
         self.resources.get_mut::<R>()
     }
 
+    /// Remove a resource by type, returning it if it existed.
+    pub fn remove_resource<R: Send + Sync + 'static>(&mut self) -> Option<R> {
+        self.resources.remove::<R>()
+    }
+
     // ── Internal ────────────────────────────────────────────────────────
 
     /// Add a boxed plugin. Called by add_plugins and PluginGroupBuilder.

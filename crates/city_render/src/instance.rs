@@ -41,19 +41,28 @@ pub struct Uniforms {
 
 impl Uniforms {
     /// Create an orthographic projection for the given screen size.
-    pub fn ortho(width: f32, height: f32, cam_x: f32, cam_y: f32) -> Self {
-        // Map screen pixels to clip space [-1, 1].
-        // Origin at top-left, Y down.
+    ///
+    /// `zoom` controls how many world-pixels map to one screen-pixel.
+    /// zoom=1.0 is 1:1, zoom=10.0 means 10 world-pixels per screen-pixel.
+    pub fn ortho_zoom(width: f32, height: f32, cam_x: f32, cam_y: f32, zoom: f32) -> Self {
+        let vw = width * zoom;
+        let vh = height * zoom;
+        // Center-origin projection: (0,0) in world maps to center of screen
         let projection = [
-            [2.0 / width, 0.0,           0.0, 0.0],
-            [0.0,         -2.0 / height,  0.0, 0.0],
-            [0.0,         0.0,            1.0, 0.0],
-            [-1.0,        1.0,            0.0, 1.0],
+            [2.0 / vw, 0.0,        0.0, 0.0],
+            [0.0,      -2.0 / vh,  0.0, 0.0],
+            [0.0,      0.0,        1.0, 0.0],
+            [0.0,      0.0,        0.0, 1.0],
         ];
         Self {
             projection,
             camera_offset: [cam_x, cam_y],
             _padding: [0.0; 2],
         }
+    }
+
+    /// Create an orthographic projection (1:1 pixel mapping).
+    pub fn ortho(width: f32, height: f32, cam_x: f32, cam_y: f32) -> Self {
+        Self::ortho_zoom(width, height, cam_x, cam_y, 1.0)
     }
 }

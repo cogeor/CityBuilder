@@ -42,6 +42,8 @@ pub fn tile_z_order(x: i16, y: i16, map_size: u16) -> f32 {
 }
 
 /// Terrain color palette — one color per terrain ID.
+///
+/// IDs 0-9: terrain types. IDs 10+: zone overlays.
 pub fn terrain_color(terrain_id: u8) -> [f32; 4] {
     match terrain_id {
         0 => [0.35, 0.65, 0.25, 1.0],  // Grass — rich green
@@ -49,6 +51,15 @@ pub fn terrain_color(terrain_id: u8) -> [f32; 4] {
         2 => [0.85, 0.75, 0.50, 1.0],  // Sand — warm beige
         3 => [0.15, 0.45, 0.15, 1.0],  // Forest — dark green
         4 => [0.50, 0.45, 0.40, 1.0],  // Rock — grey-brown
+        // Road
+        7  => [0.40, 0.40, 0.40, 1.0],  // Road — dark grey
+        // Zone overlays (10 + ZoneType discriminant)
+        11 => [0.30, 0.75, 0.30, 1.0], // Residential — bright green
+        12 => [0.30, 0.40, 0.85, 1.0], // Commercial — blue
+        13 => [0.80, 0.70, 0.20, 1.0], // Industrial — yellow
+        14 => [0.60, 0.40, 0.70, 1.0], // Civic — purple
+        15 => [0.20, 0.70, 0.20, 1.0], // Park — dark green
+        16 => [0.55, 0.55, 0.55, 1.0], // Transport — grey
         _ => [0.80, 0.20, 0.80, 1.0],  // Unknown — magenta
     }
 }

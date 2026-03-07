@@ -16,6 +16,7 @@ pub struct Camera {
     pub x: f32,
     pub y: f32,
     pub speed: f32,
+    pub zoom: f32,
     pub keys_held: [bool; 4], // W, A, S, D
 }
 
@@ -25,6 +26,7 @@ impl Camera {
             x: center_x,
             y: center_y,
             speed: 400.0,
+            zoom: 1.0,
             keys_held: [false; 4],
         }
     }
@@ -300,12 +302,15 @@ pub struct IsometricApp {
 }
 
 impl IsometricApp {
-    pub fn new(instances: Vec<GpuInstance>, cam_x: f32, cam_y: f32) -> Self {
+    pub fn new(instances: Vec<GpuInstance>, cam_x: f32, cam_y: f32, cam_speed: f32, zoom: f32) -> Self {
+        let mut camera = Camera::new(cam_x, cam_y);
+        camera.speed = cam_speed;
+        camera.zoom = zoom;
         Self {
             state: None,
             window: None,
             instances,
-            camera: Camera::new(cam_x, cam_y),
+            camera,
             last_frame: std::time::Instant::now(),
         }
     }
@@ -320,11 +325,12 @@ impl IsometricApp {
         self.camera.update(dt);
 
         // Update uniforms
-        let uniforms = Uniforms::ortho(
+        let uniforms = Uniforms::ortho_zoom(
             state.size.width as f32,
             state.size.height as f32,
             self.camera.x,
             self.camera.y,
+            self.camera.zoom,
         );
         state.queue.write_buffer(&state.uniform_buffer, 0, bytemuck::cast_slice(&[uniforms]));
 
@@ -436,8 +442,15 @@ impl ApplicationHandler for IsometricApp {
 
 /// Run the isometric renderer. Blocks until window is closed.
 pub fn run(instances: Vec<GpuInstance>, cam_x: f32, cam_y: f32) {
+    run_with_options(instances, cam_x, cam_y, 400.0, 1.0);
+}
+
+/// Run the isometric renderer with custom camera speed and zoom.
+///
+/// `zoom`: world-pixels per screen-pixel. Higher = more zoomed out.
+pub fn run_with_options(instances: Vec<GpuInstance>, cam_x: f32, cam_y: f32, cam_speed: f32, zoom: f32) {
     env_logger::init();
     let event_loop = EventLoop::new().unwrap();
-    let mut app = IsometricApp::new(instances, cam_x, cam_y);
+    let mut app = IsometricApp::new(instances, cam_x, cam_y, cam_speed, zoom);
     event_loop.run_app(&mut app).unwrap();
 }

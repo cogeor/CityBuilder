@@ -2,7 +2,9 @@
 
 use city_core::StatusFlags;
 use city_engine::archetype::{ArchetypeDefinition, ArchetypeRegistry, ArchetypeTag};
+use city_engine::network::RoadNetwork;
 
+use crate::tilemap::{TileFlags, TileKind};
 use crate::types::{ZoneDensity, ZoneType};
 use crate::world::WorldState;
 
@@ -89,6 +91,39 @@ pub fn register_default_archetypes(registry: &mut ArchetypeRegistry) {
     });
 }
 
+/// Draw a straight road line between two points, setting tile kind + flags.
+/// Also adds segments to the road network and marks adjacent tiles with ROAD_ACCESS.
+fn draw_road_line(world: &mut WorldState, road_net: &mut RoadNetwork, x0: i16, y0: i16, x1: i16, y1: i16) {
+    let (dx, dy) = ((x1 - x0).signum(), (y1 - y0).signum());
+    let (mut x, mut y) = (x0, y0);
+    let mut prev: Option<(i16, i16)> = None;
+    loop {
+        // Set this tile as road
+        world.tiles.set_kind(x as u32, y as u32, TileKind::Road);
+        world.tiles.set_flags(x as u32, y as u32, TileFlags::ROAD_ACCESS);
+
+        // Add segment to road network
+        if let Some((px, py)) = prev {
+            road_net.add_segment(
+                city_core::TileCoord::new(px, py),
+                city_core::TileCoord::new(x, y),
+            );
+        }
+
+        // Mark cardinal neighbors with ROAD_ACCESS
+        for &(nx, ny) in &[(x-1, y), (x+1, y), (x, y-1), (x, y+1)] {
+            if nx >= 0 && ny >= 0 {
+                world.tiles.set_flags(nx as u32, ny as u32, TileFlags::ROAD_ACCESS);
+            }
+        }
+
+        prev = Some((x, y));
+        if x == x1 && y == y1 { break; }
+        if dx != 0 { x += dx; }
+        if dy != 0 { y += dy; }
+    }
+}
+
 /// Place an entity and immediately mark it as fully constructed.
 fn place_completed(world: &mut WorldState, archetype_id: u16, x: i16, y: i16) {
     if let Some(handle) = world.place_entity(archetype_id, x, y, 0) {
@@ -97,91 +132,127 @@ fn place_completed(world: &mut WorldState, archetype_id: u16, x: i16, y: i16) {
     }
 }
 
-/// Build a small town: 100x100 map with zoned areas and pre-placed buildings.
+/// Build a small town on a 1000x1000 map with roads, zoned areas, and pre-placed buildings.
 ///
-/// Layout:
-/// - Roads not placed (city_sim doesn't have road commands yet)
-/// - Residential zones: (10-40, 10-40)
-/// - Commercial zones: (50-80, 10-40)
-/// - Industrial zones: (10-40, 50-80)
+/// Layout matches engine-wasm's predefined_maps::build_small_town:
+/// - Roads form a grid at y=400,460,520,580 and x=400,500,600
+/// - Residential zones: (401-499, 401-459) and (501-599, 401-459)
+/// - Commercial zones: (401-499, 461-519)
+/// - Industrial zones: (501-599, 461-519)
 /// - Pre-placed buildings: 6 houses, 3 shops, 1 power plant
 /// - Treasury: $500,000
-pub fn build_small_town(world: &mut WorldState) {
+pub fn build_small_town(world: &mut WorldState, road_net: &mut RoadNetwork) {
     world.treasury = 50_000_000;
 
-    // Zone: Residential (10-40, 10-40)
-    for y in 10..40u32 {
-        for x in 10..40u32 {
+    // Roads: grid forming 6 blocks
+    // Horizontal roads at y=400, 460, 520, 580 from x=400 to x=600
+    for &y in &[400i16, 460, 520, 580] {
+        draw_road_line(world, road_net, 400, y, 600, y);
+    }
+    // Vertical roads at x=400, 500, 600 from y=400 to y=580
+    for &x in &[400i16, 500, 600] {
+        draw_road_line(world, road_net, x, 400, x, 580);
+    }
+
+    // Zone: Residential blocks
+    for y in 401..460u32 {
+        for x in 401..500u32 {
+            world.tiles.set_zone(x, y, ZoneType::Residential);
+            world.tiles.set_density(x, y, ZoneDensity::Low);
+        }
+    }
+    for y in 401..460u32 {
+        for x in 501..600u32 {
             world.tiles.set_zone(x, y, ZoneType::Residential);
             world.tiles.set_density(x, y, ZoneDensity::Low);
         }
     }
 
-    // Zone: Commercial (50-80, 10-40)
-    for y in 10..40u32 {
-        for x in 50..80u32 {
+    // Zone: Commercial block
+    for y in 461..520u32 {
+        for x in 401..500u32 {
             world.tiles.set_zone(x, y, ZoneType::Commercial);
             world.tiles.set_density(x, y, ZoneDensity::Low);
         }
     }
 
-    // Zone: Industrial (10-40, 50-80)
-    for y in 50..80u32 {
-        for x in 10..40u32 {
+    // Zone: Industrial block
+    for y in 461..520u32 {
+        for x in 501..600u32 {
             world.tiles.set_zone(x, y, ZoneType::Industrial);
             world.tiles.set_density(x, y, ZoneDensity::Low);
         }
     }
 
-    // Pre-placed buildings
+    // Pre-placed houses in residential zone
     for &(x, y) in &[
-        (12i16, 12i16), (14, 12), (16, 12),
-        (12, 14), (14, 14), (16, 14),
+        (410i16, 410i16), (420, 410), (430, 410),
+        (510, 410), (520, 410), (530, 410),
     ] {
         place_completed(world, 1, x, y); // Small House
     }
-    for &(x, y) in &[(52i16, 12i16), (54, 12), (56, 12)] {
+    // Shops in commercial zone
+    for &(x, y) in &[(410i16, 470i16), (420, 470), (430, 470)] {
         place_completed(world, 3, x, y); // Shop
     }
-    // Power Plant at (85, 85) — outside zones
-    place_completed(world, 2, 85, 85);
+    // Power Plant at (410, 525)
+    place_completed(world, 2, 410, 525);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use city_core::MapSize;
+    use city_engine::network::RoadNetwork;
+
+    fn setup_small_town() -> (WorldState, RoadNetwork) {
+        let mut world = WorldState::new(MapSize::new(1000, 1000), 42);
+        let mut road_net = RoadNetwork::new();
+        build_small_town(&mut world, &mut road_net);
+        (world, road_net)
+    }
 
     #[test]
     fn small_town_loads_without_panic() {
-        let mut world = WorldState::new(MapSize::new(100, 100), 42);
-        let mut registry = ArchetypeRegistry::new();
-        register_default_archetypes(&mut registry);
-        build_small_town(&mut world);
-        assert_eq!(world.tiles.width(), 100);
-        assert_eq!(world.tiles.height(), 100);
+        let (world, _) = setup_small_town();
+        assert_eq!(world.tiles.width(), 1000);
+        assert_eq!(world.tiles.height(), 1000);
+    }
+
+    #[test]
+    fn small_town_has_roads() {
+        let (world, road_net) = setup_small_town();
+        // Road at (450, 400) should exist (horizontal road at y=400)
+        assert!(road_net.has_road(city_core::TileCoord::new(450, 400)));
+        let tile = world.tiles.get(450, 400).unwrap();
+        assert_eq!(tile.kind, crate::tilemap::TileKind::Road);
+    }
+
+    #[test]
+    fn small_town_road_access_on_adjacent_tiles() {
+        let (world, _) = setup_small_town();
+        // Tile (401, 401) is adjacent to roads at y=400 and x=400
+        let tile = world.tiles.get(401, 401).unwrap();
+        assert!(tile.flags.contains(crate::tilemap::TileFlags::ROAD_ACCESS));
     }
 
     #[test]
     fn small_town_has_zones() {
-        let mut world = WorldState::new(MapSize::new(100, 100), 42);
-        build_small_town(&mut world);
-        let tile = world.tiles.get(15, 15).unwrap();
+        let (world, _) = setup_small_town();
+        let tile = world.tiles.get(410, 410).unwrap();
         assert_eq!(tile.zone, ZoneType::Residential);
     }
 
     #[test]
     fn small_town_has_buildings() {
-        let mut world = WorldState::new(MapSize::new(100, 100), 42);
-        build_small_town(&mut world);
+        let (world, _) = setup_small_town();
         let count = world.entities.iter_alive().count();
         assert!(count >= 10, "expected >= 10 entities, got {}", count);
     }
 
     #[test]
     fn buildings_are_complete() {
-        let mut world = WorldState::new(MapSize::new(100, 100), 42);
-        build_small_town(&mut world);
+        let (world, _) = setup_small_town();
         for handle in world.entities.iter_alive() {
             let progress = world.entities.get_construction_progress(handle).unwrap();
             assert_eq!(progress, 0xFFFF);
