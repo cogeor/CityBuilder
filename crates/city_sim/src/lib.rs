@@ -10,3 +10,4 @@ pub mod phase_wheel;
 pub mod neighbors;
 pub mod plugin;
 pub mod systems;
+pub mod mapgen;
