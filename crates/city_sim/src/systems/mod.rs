@@ -10,4 +10,5 @@ pub mod stripe_walk;
 pub mod suitability;
 pub mod buildings;
 pub mod effects;
+pub mod overlay_pipeline;
 pub mod sim_tick;

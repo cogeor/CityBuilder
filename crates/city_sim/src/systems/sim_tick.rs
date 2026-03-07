@@ -10,11 +10,14 @@ use crate::events::EventBus;
 use crate::math::rng::Rng;
 use crate::systems::buildings::{DevelopmentConfig, DevelopmentState, compute_zone_demand, tick_zoned_development_with_config};
 use crate::systems::construction::tick_construction;
+use crate::sim_map::SimMapRegistry;
 use crate::systems::effects::{EffectMap, propagate_effects};
 use crate::systems::finance::tick_finance;
 use crate::systems::jobs::tick_jobs;
+use crate::systems::overlay_pipeline::run_overlay_pipeline;
 use crate::systems::population::tick_population;
 use crate::world::WorldState;
+use crate::world_vars::WorldVars;
 
 /// Persistent simulation state across ticks.
 pub struct SimRunState {
@@ -86,15 +89,25 @@ impl SimSystem for SimTickSystem {
             DevelopmentConfig::default(), dev_state, demand, None,
         );
 
-        // 6. Effects propagation (every 4 ticks)
+        // 6. Effects + overlay pipeline (every 4 ticks)
         if tick % 4 == 0 {
+            let s = world.map_size();
             let mut effect_map = ctx.resources.remove::<EffectMap>()
-                .unwrap_or_else(|| {
-                    let s = world.map_size();
-                    EffectMap::new(s.width as u32, s.height as u32)
-                });
+                .unwrap_or_else(|| EffectMap::new(s.width as u32, s.height as u32));
+            let world_vars = ctx.resources.remove::<WorldVars>()
+                .unwrap_or_default();
+            let mut sim_maps = ctx.resources.remove::<SimMapRegistry>()
+                .unwrap_or_else(|| SimMapRegistry::new(s.width as usize, s.height as usize));
+
             propagate_effects(&mut effect_map, &world.entities, &registry);
+            run_overlay_pipeline(
+                &world.entities, &registry, &effect_map, &world_vars,
+                &mut sim_maps, run_state.population,
+            );
+
             ctx.resources.insert(effect_map);
+            ctx.resources.insert(world_vars);
+            ctx.resources.insert(sim_maps);
         }
 
         // Update world tick
