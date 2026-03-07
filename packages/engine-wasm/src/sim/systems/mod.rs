@@ -19,6 +19,7 @@ pub mod land_value;
 pub mod pollution_wind;
 pub mod population;
 pub mod seasons;
+pub mod service_system;
 pub mod system_template;
 pub mod transit;
 pub mod transport;
