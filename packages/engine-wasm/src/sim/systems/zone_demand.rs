@@ -5,6 +5,7 @@
 //! `compute_zone_demand` re-derives demand each VALVERATE ticks from population,
 //! employment capacity, and current tax rates.
 
+use crate::core::world_vars::WorldVars;
 use crate::core_types::ZoneType;
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -121,6 +122,61 @@ pub fn compute_zone_demand(
     ZoneDemand { residential: res, commercial: com, industrial: ind }
 }
 
+// ─── AbandonmentState ─────────────────────────────────────────────────────────
+
+/// Tracks abandonment countdown for a zone or building slot.
+///
+/// Increment `age_ticks` each tick when utilization is below
+/// `WorldVars::abandon_util_threshold`. Reset to 0 when above threshold.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct AbandonmentState {
+    /// Ticks spent below `abandon_util_threshold`. Zero when healthy.
+    pub age_ticks: u32,
+}
+
+impl AbandonmentState {
+    pub const fn new() -> Self { AbandonmentState { age_ticks: 0 } }
+
+    /// Update state and return `true` if the slot should be marked abandoned.
+    ///
+    /// - `utilization`: fraction of capacity in use (0.0–1.0)
+    /// - `ticks_per_day`: simulation ticks in one game-day (used to convert
+    ///   `WorldVars::abandon_days` to ticks)
+    pub fn tick(&mut self, utilization: f32, world_vars: &WorldVars, ticks_per_day: u32) -> bool {
+        if utilization < world_vars.abandon_util_threshold {
+            self.age_ticks += 1;
+        } else {
+            self.age_ticks = 0;
+        }
+        let threshold = (world_vars.abandon_days * ticks_per_day as f32) as u32;
+        self.age_ticks >= threshold
+    }
+}
+
+// ─── gate_growth ──────────────────────────────────────────────────────────────
+
+/// Apply growth gating to a demand value based on current utilization.
+///
+/// Returns 0 if `utilization < world_vars.grow_min_threshold`, otherwise
+/// scales `demand` by the job-housing ratio factor:
+///   `scale = (jhr / world_vars.target_jobs_housing_ratio).clamp(0.0, 2.0)`
+/// then converts back to i32 (clamped to original demand range).
+///
+/// This implements the design rule: zones do not grow when underutilised,
+/// and grow faster when the job-housing balance matches the real-world target.
+pub fn gate_growth(
+    demand: i32,
+    utilization: f32,
+    jobs_housing_ratio: f32,
+    world_vars: &WorldVars,
+) -> i32 {
+    if utilization < world_vars.grow_min_threshold {
+        return 0;
+    }
+    let jhr_scale = (jobs_housing_ratio / world_vars.target_jobs_housing_ratio).clamp(0.0, 2.0);
+    ((demand as f32 * jhr_scale) as i32).clamp(-RES_DEMAND_MAX, RES_DEMAND_MAX)
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -187,5 +243,48 @@ mod tests {
         // Even if target would be very high, step is clamped to MAX_DELTA
         let d = compute_zone_demand(10000, 1, 1, 1, 0, 0, 0, prev);
         assert!(d.residential <= 200, "Step should be clamped to 200, got {}", d.residential);
+    }
+
+    #[test]
+    fn gate_blocks_growth_below_threshold() {
+        let wv = WorldVars::default(); // grow_min_threshold = 0.55
+        // utilization 0.3 < 0.55 → demand zeroed
+        assert_eq!(gate_growth(500, 0.3, 1.1, &wv), 0);
+    }
+
+    #[test]
+    fn gate_allows_growth_above_threshold() {
+        let wv = WorldVars::default();
+        // utilization 0.7 >= 0.55, jhr == target → scale = 1.0 → demand unchanged
+        let result = gate_growth(500, 0.7, 1.1, &wv);
+        assert!(result > 0, "expected positive demand, got {}", result);
+    }
+
+    #[test]
+    fn abandonment_triggers_after_threshold_ticks() {
+        let wv = WorldVars::default(); // abandon_days=90, assume ticks_per_day=1
+        let mut state = AbandonmentState::new();
+        // tick 89 times at low utilization — not yet abandoned
+        for _ in 0..89 {
+            let abandoned = state.tick(0.1, &wv, 1);
+            assert!(!abandoned);
+        }
+        // tick 90 — now abandoned
+        let abandoned = state.tick(0.1, &wv, 1);
+        assert!(abandoned, "should be abandoned after 90 ticks below threshold");
+    }
+
+    #[test]
+    fn abandonment_resets_when_utilization_recovers() {
+        let wv = WorldVars::default();
+        let mut state = AbandonmentState::new();
+        // Run 50 ticks below threshold
+        for _ in 0..50 {
+            state.tick(0.1, &wv, 1);
+        }
+        assert_eq!(state.age_ticks, 50);
+        // Recover
+        state.tick(0.9, &wv, 1);
+        assert_eq!(state.age_ticks, 0, "age_ticks should reset on recovery");
     }
 }
