@@ -103,42 +103,49 @@ fn main() {
     }
     println!("  Simulated 100 warmup ticks");
 
-    // Build tile data from world state AFTER warmup (so we see developed buildings)
-    let tiles: Vec<(i16, i16, u32)> = {
+    // Build initial tile data from world state AFTER warmup
+    let max_dim = map_size.width.max(map_size.height);
+    let instances = build_instances_from_engine(&engine, max_dim);
+
+    {
         let world = engine.get_resource::<WorldState>().unwrap();
         let entity_count = world.entities.iter_alive().count();
         println!("  Entities after warmup: {}", entity_count);
         println!("  Treasury after warmup: ${:.2}", world.treasury as f64 / 100.0);
-
-        let w = world.tiles.width();
-        let h = world.tiles.height();
-        let mut out = Vec::with_capacity((w * h) as usize);
-        for y in 0..h {
-            for x in 0..w {
-                let pattern_id = match world.tiles.get(x, y) {
-                    Some(tile) => tile_to_pattern(&tile),
-                    None => 0,
-                };
-                out.push((x as i16, y as i16, pattern_id));
-            }
-        }
-        out
-    };
-
-    // Build render instances
-    let max_dim = map_size.width.max(map_size.height);
-    let instances = renderer::build_terrain_instances(&tiles, max_dim);
+    }
     println!("  Instances: {}", instances.len());
 
     let (cam_x, cam_y) = projection::map_center_screen(map_size.width, map_size.height);
     println!("  Camera: ({:.0}, {:.0})", cam_x, cam_y);
-    println!("  Controls: WASD/Arrows to pan, Escape to quit");
+    println!("  Controls: WASD/Arrows to pan, scroll to zoom, Escape to quit");
     println!();
 
     // Zoom out so full map fits in ~800px window
-    // Isometric map width in pixels ≈ max_dim * TILE_W (64)
     let map_screen_width = max_dim as f32 * 64.0;
     let zoom = (map_screen_width / 800.0).max(1.0);
     let cam_speed = max_dim as f32 * 4.0;
-    renderer::run_with_options(instances, cam_x, cam_y, cam_speed, zoom);
+
+    // Run with live simulation — engine ticks every few render frames
+    renderer::run_with_sim(instances, cam_x, cam_y, cam_speed, zoom, move || {
+        engine.tick();
+        build_instances_from_engine(&engine, max_dim)
+    });
+}
+
+/// Extract tile data from the engine and build GPU instances.
+fn build_instances_from_engine(engine: &SimulationEngine, max_dim: u16) -> Vec<city_render::instance::GpuInstance> {
+    let world = engine.get_resource::<WorldState>().unwrap();
+    let w = world.tiles.width();
+    let h = world.tiles.height();
+    let mut tiles = Vec::with_capacity((w * h) as usize);
+    for y in 0..h {
+        for x in 0..w {
+            let pattern_id = match world.tiles.get(x, y) {
+                Some(tile) => tile_to_pattern(&tile),
+                None => 0,
+            };
+            tiles.push((x as i16, y as i16, pattern_id));
+        }
+    }
+    renderer::build_terrain_instances(&tiles, max_dim)
 }
