@@ -33,9 +33,46 @@ pub fn generate_atlas() -> Vec<u8> {
 
 /// UV coordinates for a sprite ID: (u_min, v_min, u_max, v_max).
 pub fn sprite_uvs(sprite_id: u32) -> [f32; 4] {
+    assert!(
+        sprite_id < SPRITE_COUNT,
+        "sprite_id {} out of range (max {})",
+        sprite_id,
+        SPRITE_COUNT - 1
+    );
     let u0 = sprite_id as f32 / SPRITE_COUNT as f32;
     let u1 = (sprite_id + 1) as f32 / SPRITE_COUNT as f32;
     [u0, 0.0, u1, 1.0]
+}
+
+/// Load atlas bytes from a raw RGBA file. Returns None if the file doesn't exist or can't be read.
+fn load_atlas_raw(path: &str) -> Option<Vec<u8>> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::fs::read(path).ok()
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = path;
+        None
+    }
+}
+
+/// Load atlas from file if it exists with the correct size, otherwise generate procedurally.
+pub fn generate_or_load_atlas() -> Vec<u8> {
+    let atlas_path = "plugins/base.world/content/spriteset_buildings.rgba";
+    let expected = (ATLAS_W * ATLAS_H * 4) as usize;
+    if let Some(data) = load_atlas_raw(atlas_path) {
+        if data.len() == expected {
+            return data;
+        }
+        eprintln!(
+            "Warning: {} has wrong size (expected {}, got {}), using procedural atlas",
+            atlas_path,
+            expected,
+            data.len()
+        );
+    }
+    generate_atlas()
 }
 
 // ─── Drawing helpers ─────────────────────────────────────────────────────────
@@ -302,5 +339,25 @@ mod tests {
         let uvs = sprite_uvs(1);
         assert_eq!(uvs[0], 1.0 / SPRITE_COUNT as f32);
         assert_eq!(uvs[2], 2.0 / SPRITE_COUNT as f32);
+    }
+
+    #[test]
+    fn sprite_uvs_bounds_check() {
+        for i in 0..SPRITE_COUNT {
+            let uvs = sprite_uvs(i);
+            assert!(uvs[0] >= 0.0 && uvs[2] <= 1.0);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "out of range")]
+    fn sprite_uvs_out_of_range_panics() {
+        sprite_uvs(SPRITE_COUNT);
+    }
+
+    #[test]
+    fn generate_or_load_atlas_produces_correct_size() {
+        let atlas = generate_or_load_atlas();
+        assert_eq!(atlas.len(), (ATLAS_W * ATLAS_H * 4) as usize);
     }
 }
