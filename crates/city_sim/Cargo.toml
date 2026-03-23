@@ -9,3 +9,4 @@ city_core = { workspace = true }
 city_engine = { workspace = true }
 serde = { workspace = true }
 bitflags = { workspace = true }
+ron = { workspace = true }

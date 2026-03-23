@@ -14,3 +14,4 @@ pub mod neighbors;
 pub mod plugin;
 pub mod systems;
 pub mod mapgen;
+pub mod loader;
