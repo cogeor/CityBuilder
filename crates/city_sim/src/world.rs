@@ -1,4 +1,5 @@
-use city_core::{ArchetypeId, EntityHandle, MapSize, MoneyCents, Tick};
+use city_core::{ArchetypeId, EntityHandle, MapSize, Tick};
+use crate::types::MoneyCents;
 use city_engine::entity::EntityStore;
 use serde::{Deserialize, Serialize};
 

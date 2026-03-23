@@ -1,6 +1,7 @@
 //! Finance and budget system: income, expenses, treasury management.
 
-use city_core::{MoneyCents, StatusFlags, Tick};
+use city_core::{StatusFlags, Tick};
+use crate::types::MoneyCents;
 use crate::archetype::{ArchetypeRegistry, ArchetypeTag};
 use city_engine::entity::EntityStore;
 

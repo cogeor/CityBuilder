@@ -3,7 +3,8 @@
 //! Archetypes describe how to compute a building's parameters.
 //! Store only archetype_id + level; derive capacity, cost, etc. on demand.
 
-use city_core::{ArchetypeId, MoneyCents, TILE_AREA_M2};
+use city_core::ArchetypeId;
+use crate::types::{MoneyCents, TILE_AREA_M2};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

@@ -10,9 +10,6 @@ use serde::{Deserialize, Serialize};
 /// Simulation tick counter (monotonically increasing).
 pub type Tick = u64;
 
-/// Money in cents (1/100 of base currency unit). Signed to allow debt.
-pub type MoneyCents = i64;
-
 /// Fixed-point Q16.16 numeric type for deterministic math.
 pub type Fixed = i32;
 
@@ -181,17 +178,6 @@ impl std::ops::BitAnd for StatusFlags {
 impl std::ops::BitOrAssign for StatusFlags {
     fn bitor_assign(&mut self, rhs: Self) { self.0 |= rhs.0; }
 }
-
-// ─── Scale Constants ────────────────────────────────────────────────────────
-
-/// Real-world meters per simulation tile side.
-pub const TILE_METERS: u32 = 16;
-
-/// Area per tile in m².
-pub const TILE_AREA_M2: u32 = TILE_METERS * TILE_METERS;
-
-/// Ticks per in-game day.
-pub const TICKS_PER_DAY: u32 = 2880;
 
 // ─── Fixed-Point Helpers ────────────────────────────────────────────────────
 

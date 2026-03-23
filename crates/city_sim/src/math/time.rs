@@ -1,4 +1,4 @@
-use city_core::{MoneyCents, Tick};
+use city_core::Tick;
 use crate::types::*;
 
 #[inline]

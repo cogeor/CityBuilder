@@ -81,6 +81,11 @@ pub const TICKS_PER_GAME_MONTH: u64 = 2_160_000;
 /// Ticks in one game year (12 game-months).
 pub const TICKS_PER_GAME_YEAR: u64 = 25_920_000;
 
+// ─── Money ──────────────────────────────────────────────────────────────────
+
+/// Money in cents (1/100 of base currency unit). Signed to allow debt.
+pub type MoneyCents = i64;
+
 // ─── Scale Constants ────────────────────────────────────────────────────────
 
 /// Meters per tile edge.
@@ -88,6 +93,15 @@ pub const SIM_TILE_M: u32 = 16;
 
 /// Square meters per tile.
 pub const SIM_TILE_AREA_M2: u32 = 256;
+
+/// Alias for `SIM_TILE_M` (real-world meters per simulation tile side).
+pub const TILE_METERS: u32 = SIM_TILE_M;
+
+/// Alias for `SIM_TILE_AREA_M2` (area per tile in m²).
+pub const TILE_AREA_M2: u32 = SIM_TILE_AREA_M2;
+
+/// Ticks per in-game day (legacy constant; prefer `TICKS_PER_GAME_DAY` for new code).
+pub const TICKS_PER_DAY: u32 = 2880;
 
 /// Render tile width in pixels.
 pub const TILE_W_PX: u32 = 128;
