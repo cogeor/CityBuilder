@@ -11,6 +11,8 @@ use crate::phase_wheel::PhaseWheel;
 use crate::sim_map::SimMapRegistry;
 use crate::systems::effects::EffectMap;
 use crate::systems::sim_tick::{SimRunState, SimTickSystem};
+use crate::systems::utility_registry::UtilityRegistry;
+use crate::systems::utility_system::{ElectricitySystem, HealthCareSystem, WaterSystem};
 use crate::world::WorldState;
 use crate::world_vars::WorldVars;
 
@@ -68,6 +70,13 @@ impl Plugin for SimCorePlugin {
         app.insert_resource(EffectMap::new(w as u32, h as u32));
         app.insert_resource(PhaseWheel::new());
         app.insert_resource(SimRunState::new(self.config.seed));
+
+        let mut utility_registry = UtilityRegistry::new();
+        utility_registry.register(ElectricitySystem::new());
+        utility_registry.register(WaterSystem::new());
+        utility_registry.register(HealthCareSystem::new());
+        app.insert_resource(utility_registry);
+
         app.add_systems(Schedule::Tick, SimTickSystem);
     }
 }
@@ -89,6 +98,7 @@ mod tests {
         assert!(app.get_resource::<AnalysisMaps>().is_some());
         assert!(app.get_resource::<SimMapRegistry>().is_some());
         assert!(app.get_resource::<PhaseWheel>().is_some());
+        assert!(app.get_resource::<UtilityRegistry>().is_some());
     }
 
     #[test]

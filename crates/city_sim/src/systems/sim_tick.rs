@@ -16,6 +16,7 @@ use crate::systems::finance::tick_finance;
 use crate::systems::jobs::tick_jobs;
 use crate::systems::overlay_pipeline::run_overlay_pipeline;
 use crate::systems::population::tick_population;
+use crate::systems::utility_registry::UtilityRegistry;
 use crate::world::WorldState;
 use crate::world_vars::WorldVars;
 
@@ -89,7 +90,12 @@ impl SimSystem for SimTickSystem {
             DevelopmentConfig::default(), dev_state, demand, None,
         );
 
-        // 6. Effects + overlay pipeline (every 4 ticks)
+        // 6. Utility systems
+        let mut utility_registry = ctx.resources.remove::<UtilityRegistry>().unwrap_or_default();
+        utility_registry.update_all(&mut world, &registry, &mut events, tick);
+        ctx.resources.insert(utility_registry);
+
+        // 7. Effects + overlay pipeline (every 4 ticks)
         if tick % 4 == 0 {
             let s = world.map_size();
             let mut effect_map = ctx.resources.remove::<EffectMap>()

@@ -35,9 +35,9 @@ impl Default for TileKind {
 // ─── TileFlags ───────────────────────────────────────────────────────────────
 
 bitflags! {
-    /// Per-tile service and state flags packed into one byte.
+    /// Per-tile service and state flags packed into two bytes.
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
-    pub struct TileFlags: u8 {
+    pub struct TileFlags: u16 {
         const POWERED            = 1 << 0;
         const WATERED            = 1 << 1;
         const ROAD_ACCESS        = 1 << 2;
@@ -54,20 +54,20 @@ impl TileFlags {
 
 impl serde::Serialize for TileFlags {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        self.bits().serialize(s)
+        (self.bits() as u16).serialize(s)
     }
 }
 
 impl<'de> serde::Deserialize<'de> for TileFlags {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let bits = u8::deserialize(d)?;
+        let bits = u16::deserialize(d)?;
         Ok(TileFlags::from_bits_retain(bits))
     }
 }
 
 // ─── TileValue ───────────────────────────────────────────────────────────────
 
-/// Packed per-tile data: exactly 5 bytes.
+/// Packed per-tile data: 6 bytes (4 × u8 fields + 1 × u16 TileFlags).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(C)]
 pub struct TileValue {
@@ -314,8 +314,8 @@ mod tests {
     }
 
     #[test]
-    fn tile_value_is_five_bytes() {
-        assert_eq!(mem::size_of::<TileValue>(), 5);
+    fn tile_value_is_six_bytes() {
+        assert_eq!(mem::size_of::<TileValue>(), 6);
     }
 
     #[test]
@@ -332,8 +332,8 @@ mod tests {
     }
 
     #[test]
-    fn tile_flags_is_one_byte() {
-        assert_eq!(mem::size_of::<TileFlags>(), 1);
+    fn tile_flags_is_two_bytes() {
+        assert_eq!(mem::size_of::<TileFlags>(), 2);
     }
 
     #[test]
