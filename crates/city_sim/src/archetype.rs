@@ -157,6 +157,41 @@ impl ArchetypeDefinition {
     }
 }
 
+/// Registry for dynamically registered archetype tags.
+#[derive(Debug)]
+pub struct TagRegistry {
+    name_to_id: std::collections::HashMap<String, u8>,
+    id_to_name: Vec<String>,
+}
+
+impl TagRegistry {
+    pub fn new() -> Self {
+        let mut reg = Self {
+            name_to_id: std::collections::HashMap::new(),
+            id_to_name: Vec::new(),
+        };
+        // Pre-register built-in tags
+        for tag in &["residential", "commercial", "industrial", "civic", "utility", "transport", "service", "low_density", "medium_density", "high_density"] {
+            reg.register(tag);
+        }
+        reg
+    }
+
+    pub fn register(&mut self, name: &str) -> u8 {
+        if let Some(&id) = self.name_to_id.get(name) { return id; }
+        let id = self.id_to_name.len() as u8;
+        self.name_to_id.insert(name.to_string(), id);
+        self.id_to_name.push(name.to_string());
+        id
+    }
+
+    pub fn get_id(&self, name: &str) -> Option<u8> { self.name_to_id.get(name).copied() }
+    pub fn get_name(&self, id: u8) -> Option<&str> { self.id_to_name.get(id as usize).map(|s| s.as_str()) }
+    pub fn count(&self) -> usize { self.id_to_name.len() }
+}
+
+impl Default for TagRegistry { fn default() -> Self { Self::new() } }
+
 /// Registry that holds all loaded archetype definitions.
 #[derive(Debug, Default)]
 pub struct ArchetypeRegistry {
@@ -358,5 +393,26 @@ mod tests {
         reg.register(updated);
         assert_eq!(reg.count(), 1);
         assert_eq!(reg.get(1).unwrap().name, "Updated");
+    }
+
+    #[test]
+    fn tag_registry_preregisters_builtins() {
+        let reg = TagRegistry::new();
+        assert_eq!(reg.count(), 10);
+        assert_eq!(reg.get_id("residential"), Some(0));
+        assert_eq!(reg.get_id("high_density"), Some(9));
+        assert_eq!(reg.get_name(2), Some("industrial"));
+    }
+
+    #[test]
+    fn tag_registry_dynamic_registration() {
+        let mut reg = TagRegistry::new();
+        let id = reg.register("historic");
+        assert_eq!(id, 10);
+        assert_eq!(reg.count(), 11);
+        // Idempotent
+        let id2 = reg.register("historic");
+        assert_eq!(id2, 10);
+        assert_eq!(reg.count(), 11);
     }
 }

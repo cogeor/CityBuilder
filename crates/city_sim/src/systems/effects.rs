@@ -179,6 +179,66 @@ pub fn propagate_effects(
     smooth_pass(police_layer, w, h, 3);
 }
 
+/// Maximum number of effect kinds (built-in + custom).
+pub const MAX_EFFECT_KINDS: usize = 16;
+
+/// Registry for dynamically registered effect kinds.
+/// Built-in EffectKind enum values are pre-registered.
+/// New kinds can be added at runtime via plugins.
+#[derive(Debug)]
+pub struct EffectKindRegistry {
+    name_to_id: std::collections::HashMap<String, u8>,
+    id_to_name: Vec<String>,
+}
+
+impl EffectKindRegistry {
+    pub fn new() -> Self {
+        let mut reg = Self {
+            name_to_id: std::collections::HashMap::new(),
+            id_to_name: Vec::new(),
+        };
+        // Pre-register built-in kinds
+        reg.register("pollution");
+        reg.register("land_value");
+        reg.register("crime");
+        reg.register("fire_protection");
+        reg.register("police_protection");
+        reg.register("power");
+        reg.register("water");
+        reg.register("noise");
+        reg
+    }
+
+    /// Register a new effect kind. Returns its ID.
+    /// If already registered, returns existing ID.
+    pub fn register(&mut self, name: &str) -> u8 {
+        if let Some(&id) = self.name_to_id.get(name) {
+            return id;
+        }
+        let id = self.id_to_name.len() as u8;
+        assert!((id as usize) < MAX_EFFECT_KINDS, "Too many effect kinds (max {})", MAX_EFFECT_KINDS);
+        self.name_to_id.insert(name.to_string(), id);
+        self.id_to_name.push(name.to_string());
+        id
+    }
+
+    pub fn get_id(&self, name: &str) -> Option<u8> {
+        self.name_to_id.get(name).copied()
+    }
+
+    pub fn get_name(&self, id: u8) -> Option<&str> {
+        self.id_to_name.get(id as usize).map(|s| s.as_str())
+    }
+
+    pub fn count(&self) -> usize {
+        self.id_to_name.len()
+    }
+}
+
+impl Default for EffectKindRegistry {
+    fn default() -> Self { Self::new() }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -260,5 +320,27 @@ mod tests {
         let mut em = EffectMap::new(16, 16);
         propagate_effects(&mut em, &entities, &registry);
         assert_eq!(em.get(EffectKind::Pollution, 4, 4), 0);
+    }
+
+    #[test]
+    fn effect_kind_registry_preregisters_builtins() {
+        let reg = EffectKindRegistry::new();
+        assert_eq!(reg.count(), 8);
+        assert_eq!(reg.get_id("pollution"), Some(0));
+        assert_eq!(reg.get_id("noise"), Some(7));
+        assert_eq!(reg.get_name(0), Some("pollution"));
+    }
+
+    #[test]
+    fn effect_kind_registry_dynamic_registration() {
+        let mut reg = EffectKindRegistry::new();
+        let id = reg.register("happiness");
+        assert_eq!(id, 8);
+        assert_eq!(reg.count(), 9);
+        assert_eq!(reg.get_id("happiness"), Some(8));
+        // Idempotent
+        let id2 = reg.register("happiness");
+        assert_eq!(id2, 8);
+        assert_eq!(reg.count(), 9);
     }
 }
