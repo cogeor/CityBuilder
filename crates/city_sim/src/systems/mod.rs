@@ -1,5 +1,6 @@
 pub mod utilities;
 pub mod electricity;
+pub mod network_propagation;
 pub mod utility_system;
 pub mod utility_registry;
 pub mod construction;

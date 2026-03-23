@@ -1,12 +1,9 @@
 //! Topology-aware electricity distribution via BFS flood-fill.
 
-use std::collections::VecDeque;
-
-use city_core::StatusFlags;
 use crate::archetype::ArchetypeRegistry;
-
-use crate::tilemap::{TileFlags, TileKind};
+use crate::tilemap::{TileFlags, TileKind, TileValue};
 use crate::world::WorldState;
+use super::network_propagation::{NetworkCfg, propagate_network};
 
 /// Aggregate power accounting for one simulation tick.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16,8 +13,7 @@ pub struct PowerState {
     pub deficit_kw: u32,
 }
 
-#[inline]
-fn tile_is_conductor(tile: crate::tilemap::TileValue) -> bool {
+fn power_conductor(tile: TileValue) -> bool {
     tile.flags.contains(TileFlags::CONDUCTOR)
         || matches!(
             tile.kind,
@@ -27,85 +23,25 @@ fn tile_is_conductor(tile: crate::tilemap::TileValue) -> bool {
 
 /// Run one full power-propagation tick via BFS flood-fill.
 pub fn propagate_power(world: &mut WorldState, registry: &ArchetypeRegistry) -> PowerState {
-    // Phase 1: clear all POWERED flags
-    let coords: Vec<(u32, u32)> = world.tiles.iter().map(|(x, y, _)| (x, y)).collect();
-    for (x, y) in coords {
-        world.tiles.clear_flags(x, y, TileFlags::POWERED);
+    let cfg = NetworkCfg {
+        name: "electricity",
+        flag_bit: TileFlags::POWERED,
+        supply_fn: |def| def.power_supply_kw,
+        demand_fn: |def, level| def.power_demand_at_level(level),
+        conductor_fn: power_conductor,
+    };
+    let state = propagate_network(world, registry, &cfg);
+    PowerState {
+        total_capacity_kw: state.total_supply,
+        total_demand_kw: state.total_demand,
+        deficit_kw: state.deficit,
     }
-
-    // Phase 2: scan entities
-    let mut total_capacity_kw: u32 = 0;
-    let mut total_demand_kw: u32 = 0;
-    let mut sources: Vec<(u32, u32)> = Vec::new();
-
-    let handles: Vec<_> = world.entities.iter_alive().collect();
-    for handle in handles {
-        let flags = world.entities.get_flags(handle).unwrap_or(StatusFlags::NONE);
-        if flags.contains(StatusFlags::UNDER_CONSTRUCTION) {
-            continue;
-        }
-        let arch_id = match world.entities.get_archetype(handle) {
-            Some(id) => id,
-            None => continue,
-        };
-        let def = match registry.get(arch_id) {
-            Some(d) => d,
-            None => continue,
-        };
-        let level = world.entities.get_level(handle).unwrap_or(1);
-        let enabled = world.entities.get_enabled(handle).unwrap_or(true);
-
-        if enabled {
-            total_capacity_kw += def.power_supply_kw;
-            total_demand_kw += def.power_demand_at_level(level);
-
-            if def.power_supply_kw > 0 {
-                if let Some(coord) = world.entities.get_pos(handle) {
-                    if coord.x >= 0 && coord.y >= 0 {
-                        sources.push((coord.x as u32, coord.y as u32));
-                    }
-                }
-            }
-        }
-    }
-
-    // Phase 3: BFS flood from sources
-    let mut frontier: VecDeque<(u32, u32)> = VecDeque::new();
-
-    for (sx, sy) in sources {
-        if !world.tiles.in_bounds(sx, sy) { continue; }
-        let tile = match world.tiles.get(sx, sy) {
-            Some(t) => t,
-            None => continue,
-        };
-        if tile_is_conductor(tile) && !tile.flags.contains(TileFlags::POWERED) {
-            world.tiles.set_flags(sx, sy, TileFlags::POWERED);
-            frontier.push_back((sx, sy));
-        }
-    }
-
-    while let Some((x, y)) = frontier.pop_front() {
-        for neighbour in world.tiles.tile_neighbors(x, y).into_iter().flatten() {
-            let (nx, ny) = neighbour;
-            let ntile = match world.tiles.get(nx, ny) {
-                Some(t) => t,
-                None => continue,
-            };
-            if tile_is_conductor(ntile) && !ntile.flags.contains(TileFlags::POWERED) {
-                world.tiles.set_flags(nx, ny, TileFlags::POWERED);
-                frontier.push_back((nx, ny));
-            }
-        }
-    }
-
-    let deficit_kw = total_demand_kw.saturating_sub(total_capacity_kw);
-    PowerState { total_capacity_kw, total_demand_kw, deficit_kw }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use city_core::MapSize;
+    use city_core::StatusFlags;
     use crate::archetype::{ArchetypeDefinition, ArchetypeTag};
     use city_engine::entity::EntityStore;
 
@@ -157,7 +93,7 @@ mod tests {
         if let Some(t) = tiles.get_mut(3, 0) { t.kind = TileKind::Zone; t.flags.insert(TileFlags::CONDUCTOR); }
 
         let mut entities = EntityStore::new(16);
-        let mut registry = ArchetypeRegistry::new();
+        let mut registry = crate::archetype::ArchetypeRegistry::new();
         registry.register(make_plant_arch(1, 1000));
         make_active(&mut entities, 1, 2, 0);
 
@@ -181,7 +117,7 @@ mod tests {
             }
         }
         let entities = EntityStore::new(16);
-        let registry = ArchetypeRegistry::new();
+        let registry = crate::archetype::ArchetypeRegistry::new();
         let mut world = make_world(tiles, entities);
         let state = propagate_power(&mut world, &registry);
 
@@ -196,7 +132,7 @@ mod tests {
         let mut tiles = TileMap::new(3, 1);
         tiles.set_flags(2, 0, TileFlags::POWERED);
         let entities = EntityStore::new(16);
-        let registry = ArchetypeRegistry::new();
+        let registry = crate::archetype::ArchetypeRegistry::new();
         let mut world = make_world(tiles, entities);
         propagate_power(&mut world, &registry);
         assert!(!world.tiles.get(2, 0).unwrap().flags.contains(TileFlags::POWERED));
