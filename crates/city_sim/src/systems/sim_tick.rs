@@ -4,7 +4,7 @@
 //! Extracts resources from the ResourceMap, runs the logic, then re-inserts them.
 
 use city_core::system::{SimContext, SimSystem};
-use city_engine::archetype::ArchetypeRegistry;
+use crate::archetype::ArchetypeRegistry;
 
 use crate::events::EventBus;
 use crate::math::rng::Rng;
@@ -132,11 +132,11 @@ mod tests {
     use super::*;
     use city_core::{App, MapSize};
     use city_core::schedule::Schedule;
-    use city_engine::archetype::ArchetypeDefinition;
+    use crate::archetype::ArchetypeDefinition;
     use city_engine::engine::SimulationEngine;
     use crate::plugin::{SimCorePlugin, SimConfig};
     use crate::systems::sim_tick::SimTickSystem;
-    use city_engine::archetype::ArchetypeTag;
+    use crate::archetype::ArchetypeTag;
 
     fn make_residential(id: u16) -> ArchetypeDefinition {
         ArchetypeDefinition {

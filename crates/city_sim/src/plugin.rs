@@ -2,7 +2,7 @@
 
 use city_core::{App, MapSize, Plugin};
 use city_core::schedule::Schedule;
-use city_engine::archetype::ArchetypeRegistry;
+use crate::archetype::ArchetypeRegistry;
 
 use crate::caches::analysis_maps::AnalysisMaps;
 use crate::caches::cache_manager::CacheManager;

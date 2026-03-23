@@ -1,5 +1,5 @@
 use city_core::StatusFlags;
-use city_engine::archetype::ArchetypeRegistry;
+use crate::archetype::ArchetypeRegistry;
 use city_engine::entity::EntityStore;
 
 use super::dirty_tiles::DirtyTileSet;
@@ -308,7 +308,7 @@ impl AnalysisMaps {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use city_engine::archetype::{ArchetypeDefinition, ArchetypeTag, Prerequisite};
+    use crate::archetype::{ArchetypeDefinition, ArchetypeTag, Prerequisite};
 
     fn make_factory() -> ArchetypeDefinition {
         ArchetypeDefinition {

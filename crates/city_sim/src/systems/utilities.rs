@@ -7,7 +7,7 @@
 use std::collections::VecDeque;
 
 use city_core::{EntityHandle, StatusFlags, Tick};
-use city_engine::archetype::{ArchetypeRegistry, ArchetypeTag};
+use crate::archetype::{ArchetypeRegistry, ArchetypeTag};
 use city_engine::entity::EntityStore;
 
 use crate::events::{EventBus, SimEvent, UtilityType};
@@ -133,8 +133,8 @@ fn distribute_utility<S, D>(
     scratch: &mut UtilityDistributeScratch,
 ) -> UtilityBalance
 where
-    S: Fn(&city_engine::archetype::ArchetypeDefinition, u8) -> u32,
-    D: Fn(&city_engine::archetype::ArchetypeDefinition, u8) -> u32,
+    S: Fn(&crate::archetype::ArchetypeDefinition, u8) -> u32,
+    D: Fn(&crate::archetype::ArchetypeDefinition, u8) -> u32,
 {
     for bucket in &mut scratch.buckets {
         bucket.clear();
@@ -310,7 +310,7 @@ pub fn compute_water_coverage(world: &mut WorldState, registry: &ArchetypeRegist
 mod tests {
     use super::*;
     use city_core::MapSize;
-    use city_engine::archetype::{ArchetypeDefinition, ArchetypeTag, Prerequisite};
+    use crate::archetype::{ArchetypeDefinition, ArchetypeTag, Prerequisite};
     use city_engine::entity::EntityStore;
 
     use crate::tilemap::TileMap;

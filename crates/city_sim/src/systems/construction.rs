@@ -1,7 +1,7 @@
 //! Construction system: advances building construction progress.
 
 use city_core::{EntityHandle, StatusFlags, Tick};
-use city_engine::archetype::ArchetypeRegistry;
+use crate::archetype::ArchetypeRegistry;
 use city_engine::entity::EntityStore;
 
 use crate::events::{EventBus, SimEvent};
@@ -94,7 +94,7 @@ pub fn ticks_remaining(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use city_engine::archetype::{ArchetypeDefinition, ArchetypeTag};
+    use crate::archetype::{ArchetypeDefinition, ArchetypeTag};
 
     fn make_test_arch(id: u16, build_time: u32) -> ArchetypeDefinition {
         ArchetypeDefinition {

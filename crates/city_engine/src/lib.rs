@@ -1,7 +1,4 @@
-//! city_engine — Simulation engine: ECS, tick loop, commands, pathfinding, map generation.
+//! city_engine — Simulation engine: ECS, tick loop, pathfinding.
 
 pub mod entity;
-pub mod archetype;
-pub mod commands;
-pub mod network;
 pub mod engine;

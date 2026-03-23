@@ -1,7 +1,7 @@
 //! Jobs and industry system: employment matching and labor market.
 
 use city_core::{EntityHandle, StatusFlags, Tick};
-use city_engine::archetype::{ArchetypeRegistry, ArchetypeTag};
+use crate::archetype::{ArchetypeRegistry, ArchetypeTag};
 use city_engine::entity::EntityStore;
 
 use crate::events::{EventBus, SimEvent};
@@ -93,7 +93,7 @@ pub fn tick_jobs(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use city_engine::archetype::ArchetypeDefinition;
+    use crate::archetype::ArchetypeDefinition;
 
     fn make_arch(id: u16, tags: Vec<ArchetypeTag>, workspace: u32) -> ArchetypeDefinition {
         ArchetypeDefinition {

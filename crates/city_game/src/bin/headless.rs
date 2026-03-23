@@ -3,7 +3,7 @@
 //! Usage: cargo run -p city_game --bin headless --release [-- --ticks N]
 
 use city_core::StatusFlags;
-use city_engine::archetype::ArchetypeRegistry;
+use city_sim::archetype::ArchetypeRegistry;
 use city_game::scenario;
 use city_sim::systems::sim_tick::SimRunState;
 use city_sim::tilemap::TileKind;

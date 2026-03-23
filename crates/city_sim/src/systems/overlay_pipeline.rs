@@ -4,7 +4,7 @@
 //! Runs every 4 ticks, gated by the caller.
 
 use city_core::StatusFlags;
-use city_engine::archetype::{ArchetypeRegistry, ArchetypeTag, EffectKind};
+use crate::archetype::{ArchetypeRegistry, ArchetypeTag, EffectKind};
 use city_engine::entity::EntityStore;
 
 use crate::sim_map::{SimMap, SimMapRegistry};
@@ -236,7 +236,7 @@ fn compute_land_value(world_vars: &WorldVars, maps: &mut SimMapRegistry) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use city_engine::archetype::ArchetypeDefinition;
+    use crate::archetype::ArchetypeDefinition;
 
     fn make_hospital(id: u16) -> ArchetypeDefinition {
         ArchetypeDefinition {

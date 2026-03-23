@@ -1,7 +1,7 @@
 //! UtilityRegistry — uniform dispatch for all utility systems.
 
 use city_core::{TileCoord, Tick};
-use city_engine::archetype::ArchetypeRegistry;
+use crate::archetype::ArchetypeRegistry;
 
 use crate::events::EventBus;
 use crate::world::WorldState;

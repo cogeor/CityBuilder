@@ -1,7 +1,7 @@
 //! `UtilitySystem` trait and built-in implementations.
 
 use city_core::{StatusFlags, TileCoord, Tick};
-use city_engine::archetype::{ArchetypeRegistry, ArchetypeTag};
+use crate::archetype::{ArchetypeRegistry, ArchetypeTag};
 use city_engine::entity::EntityStore;
 
 use crate::events::{EventBus, SimEvent, UtilityType};

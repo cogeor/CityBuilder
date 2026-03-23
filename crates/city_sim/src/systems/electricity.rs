@@ -3,7 +3,7 @@
 use std::collections::VecDeque;
 
 use city_core::StatusFlags;
-use city_engine::archetype::ArchetypeRegistry;
+use crate::archetype::ArchetypeRegistry;
 
 use crate::tilemap::{TileFlags, TileKind};
 use crate::world::WorldState;
@@ -106,7 +106,7 @@ pub fn propagate_power(world: &mut WorldState, registry: &ArchetypeRegistry) -> 
 mod tests {
     use super::*;
     use city_core::MapSize;
-    use city_engine::archetype::{ArchetypeDefinition, ArchetypeTag};
+    use crate::archetype::{ArchetypeDefinition, ArchetypeTag};
     use city_engine::entity::EntityStore;
 
     use crate::tilemap::{TileKind, TileMap, TileFlags};

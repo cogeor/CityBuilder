@@ -1,3 +1,6 @@
+pub mod archetype;
+pub mod commands;
+pub mod network;
 pub mod types;
 pub mod tilemap;
 pub mod world;

@@ -1,9 +1,9 @@
 //! Scenario setup — shared between headless and visual binaries.
 
 use city_core::{App, MapSize, StatusFlags};
-use city_engine::archetype::{ArchetypeDefinition, ArchetypeRegistry, ArchetypeTag};
+use city_sim::archetype::{ArchetypeDefinition, ArchetypeRegistry, ArchetypeTag};
 use city_engine::engine::SimulationEngine;
-use city_engine::network::RoadNetwork;
+use city_sim::network::RoadNetwork;
 use city_render::instance::GpuInstance;
 use city_render::renderer::{self, FrameData};
 use city_sim::plugin::{SimCorePlugin, SimConfig};

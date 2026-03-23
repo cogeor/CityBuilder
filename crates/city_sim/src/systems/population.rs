@@ -1,7 +1,7 @@
 //! Population and housing system.
 
 use city_core::{StatusFlags, Tick};
-use city_engine::archetype::{ArchetypeRegistry, ArchetypeTag};
+use crate::archetype::{ArchetypeRegistry, ArchetypeTag};
 use city_engine::entity::EntityStore;
 
 use crate::events::{EventBus, SimEvent};
@@ -91,7 +91,7 @@ pub fn tick_population(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use city_engine::archetype::ArchetypeDefinition;
+    use crate::archetype::ArchetypeDefinition;
 
     fn make_residential(id: u16, living_space_m2: u32) -> ArchetypeDefinition {
         ArchetypeDefinition {

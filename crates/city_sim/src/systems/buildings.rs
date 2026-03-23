@@ -4,7 +4,7 @@
 //! Uses a persistent `StripeWalkIter` per `(ZoneType, ZoneDensity)`
 //! pair so tiles fill in spatial order.
 
-use city_engine::archetype::{ArchetypeDefinition, ArchetypeRegistry, ArchetypeTag};
+use crate::archetype::{ArchetypeDefinition, ArchetypeRegistry, ArchetypeTag};
 
 use crate::caches::analysis_maps::AnalysisMaps;
 use crate::math::rng::Rng;
@@ -463,7 +463,7 @@ fn is_occupied(mask: &[u64], map_width: u16, x: i16, y: i16) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use city_engine::archetype::ArchetypeDefinition;
+    use crate::archetype::ArchetypeDefinition;
     use city_core::MapSize;
 
     fn make_residential_arch(id: u16) -> ArchetypeDefinition {

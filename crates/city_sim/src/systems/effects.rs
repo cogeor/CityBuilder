@@ -5,7 +5,7 @@
 //! `smooth_pass` applies SimCity-style 4-neighbour weighted averaging.
 
 use city_core::StatusFlags;
-use city_engine::archetype::{ArchetypeRegistry, Effect, EffectKind, EFFECT_KIND_COUNT};
+use crate::archetype::{ArchetypeRegistry, Effect, EffectKind, EFFECT_KIND_COUNT};
 use city_engine::entity::EntityStore;
 
 /// Per-tile overlay maps, one layer per `EffectKind`.
@@ -182,7 +182,7 @@ pub fn propagate_effects(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use city_engine::archetype::{ArchetypeDefinition, ArchetypeTag};
+    use crate::archetype::{ArchetypeDefinition, ArchetypeTag};
 
     fn make_industrial(id: u16) -> ArchetypeDefinition {
         ArchetypeDefinition {
