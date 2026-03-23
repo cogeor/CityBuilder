@@ -17,8 +17,11 @@ pub enum Schedule {
     PreTick = 1,
     /// Main simulation systems (population, economy, transport, etc.).
     Tick = 2,
+    /// Overlay pipeline — propagates effects and updates sim map layers.
+    /// Runs after Tick, before PostTick.
+    OverlayPipeline = 3,
     /// After simulation (stats recording, event emission, dirty tracking).
-    PostTick = 3,
+    PostTick = 4,
     /// Render data extraction and preparation.
-    Render = 4,
+    Render = 5,
 }

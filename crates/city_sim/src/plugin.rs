@@ -10,7 +10,7 @@ use crate::events::EventBus;
 use crate::phase_wheel::PhaseWheel;
 use crate::sim_map::SimMapRegistry;
 use crate::systems::effects::EffectMap;
-use crate::systems::sim_tick::{SimRunState, SimTickSystem};
+use crate::systems::sim_tick::{OverlayPipelineSystem, SimRunState, SimTickSystem};
 use crate::systems::utility_registry::UtilityRegistry;
 use crate::systems::utility_system::{ElectricitySystem, HealthCareSystem, WaterSystem};
 use crate::world::WorldState;
@@ -78,6 +78,7 @@ impl Plugin for SimCorePlugin {
         app.insert_resource(utility_registry);
 
         app.add_systems(Schedule::Tick, SimTickSystem);
+        app.add_systems(Schedule::OverlayPipeline, OverlayPipelineSystem);
     }
 }
 

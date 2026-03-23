@@ -95,27 +95,6 @@ impl SimSystem for SimTickSystem {
         utility_registry.update_all(&mut world, &registry, &mut events, tick);
         ctx.resources.insert(utility_registry);
 
-        // 7. Effects + overlay pipeline (every 4 ticks)
-        if tick % 4 == 0 {
-            let s = world.map_size();
-            let mut effect_map = ctx.resources.remove::<EffectMap>()
-                .unwrap_or_else(|| EffectMap::new(s.width as u32, s.height as u32));
-            let world_vars = ctx.resources.remove::<WorldVars>()
-                .unwrap_or_default();
-            let mut sim_maps = ctx.resources.remove::<SimMapRegistry>()
-                .unwrap_or_else(|| SimMapRegistry::new(s.width as usize, s.height as usize));
-
-            propagate_effects(&mut effect_map, &world.entities, &registry);
-            run_overlay_pipeline(
-                &world.entities, &registry, &effect_map, &world_vars,
-                &mut sim_maps, run_state.population,
-            );
-
-            ctx.resources.insert(effect_map);
-            ctx.resources.insert(world_vars);
-            ctx.resources.insert(sim_maps);
-        }
-
         // Update world tick
         world.tick = tick;
 
@@ -124,6 +103,54 @@ impl SimSystem for SimTickSystem {
         ctx.resources.insert(registry);
         ctx.resources.insert(events);
         ctx.resources.insert(run_state);
+    }
+}
+
+/// Overlay pipeline system — runs effect propagation and sim map updates every 4 ticks.
+///
+/// Registered on `Schedule::OverlayPipeline`, which executes after `Schedule::Tick`.
+pub struct OverlayPipelineSystem;
+
+impl SimSystem for OverlayPipelineSystem {
+    fn name(&self) -> &str { "overlay_pipeline" }
+
+    fn tick(&mut self, ctx: &mut SimContext) {
+        let tick = ctx.tick;
+        if tick % 4 != 0 {
+            return;
+        }
+
+        let Some(world) = ctx.resources.get::<WorldState>() else { return };
+        let s = world.map_size();
+        drop(world);
+
+        let Some(registry) = ctx.resources.get::<ArchetypeRegistry>() else { return };
+        drop(registry);
+
+        let mut effect_map = ctx.resources.remove::<EffectMap>()
+            .unwrap_or_else(|| EffectMap::new(s.width as u32, s.height as u32));
+        let world_vars = ctx.resources.remove::<WorldVars>()
+            .unwrap_or_default();
+        let mut sim_maps = ctx.resources.remove::<SimMapRegistry>()
+            .unwrap_or_else(|| SimMapRegistry::new(s.width as usize, s.height as usize));
+
+        // Re-borrow after removing the overlay resources
+        let world = ctx.resources.get::<WorldState>().unwrap();
+        let registry = ctx.resources.get::<ArchetypeRegistry>().unwrap();
+
+        let run_state = ctx.resources.get::<SimRunState>()
+            .map(|rs| rs.population)
+            .unwrap_or(0);
+
+        propagate_effects(&mut effect_map, &world.entities, registry);
+        run_overlay_pipeline(
+            &world.entities, registry, &effect_map, &world_vars,
+            &mut sim_maps, run_state,
+        );
+
+        ctx.resources.insert(effect_map);
+        ctx.resources.insert(world_vars);
+        ctx.resources.insert(sim_maps);
     }
 }
 
