@@ -5,6 +5,10 @@ edition.workspace = true
 license.workspace = true
 description = "City builder GPU rendering — wgpu backend, isometric camera, instanced sprites"
 
+[features]
+default = []
+hot-reload = []
+
 [dependencies]
 city_core = { workspace = true }
 wgpu = "24"

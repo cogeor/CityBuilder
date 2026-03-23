@@ -10,6 +10,10 @@ default-run = "city_game"
 name = "city_game"
 path = "src/main.rs"
 
+[features]
+default = []
+hot-reload = ["city_render/hot-reload"]
+
 [dependencies]
 city_core = { workspace = true }
 city_engine = { workspace = true }
