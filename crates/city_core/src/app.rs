@@ -27,6 +27,9 @@ pub struct App {
 
     /// Names of registered plugins (for duplicate detection).
     plugin_names: Vec<String>,
+
+    /// Stored plugins for finish/cleanup lifecycle hooks.
+    plugins: Vec<Box<dyn Plugin>>,
 }
 
 impl App {
@@ -35,6 +38,7 @@ impl App {
             systems: BTreeMap::new(),
             resources: ResourceMap::new(),
             plugin_names: Vec::new(),
+            plugins: Vec::new(),
         }
     }
 
@@ -104,6 +108,25 @@ impl App {
 
         plugin.build(self);
         self.plugin_names.push(name);
+        self.plugins.push(plugin);
+    }
+
+    /// Call `finish` on all stored plugins. Run after all plugins are built.
+    pub fn finish_plugins(&mut self) {
+        let plugins = std::mem::take(&mut self.plugins);
+        for p in &plugins {
+            p.finish(self);
+        }
+        self.plugins = plugins;
+    }
+
+    /// Call `cleanup` on all stored plugins. Run after finish.
+    pub fn cleanup_plugins(&mut self) {
+        let plugins = std::mem::take(&mut self.plugins);
+        for p in &plugins {
+            p.cleanup(self);
+        }
+        self.plugins = plugins;
     }
 
     /// Get all systems for a given schedule, consuming them.
@@ -198,5 +221,39 @@ mod tests {
         let mut app = App::new();
         app.insert_resource(42u32);
         assert_eq!(*app.get_resource::<u32>().unwrap(), 42);
+    }
+
+    #[test]
+    fn finish_plugins_called() {
+        struct FinishPlugin;
+        impl crate::Plugin for FinishPlugin {
+            fn build(&self, _app: &mut App) {}
+            fn finish(&self, app: &mut App) {
+                // Insert a sentinel resource to prove finish was called
+                app.insert_resource(99u64);
+            }
+        }
+
+        let mut app = App::new();
+        app.add_plugins(FinishPlugin);
+        assert!(app.get_resource::<u64>().is_none(), "finish not yet called");
+        app.finish_plugins();
+        assert_eq!(*app.get_resource::<u64>().unwrap(), 99, "finish should have inserted resource");
+    }
+
+    #[test]
+    fn cleanup_plugins_called() {
+        struct CleanupPlugin;
+        impl crate::Plugin for CleanupPlugin {
+            fn build(&self, _app: &mut App) {}
+            fn cleanup(&self, app: &mut App) {
+                app.insert_resource(77u8);
+            }
+        }
+
+        let mut app = App::new();
+        app.add_plugins(CleanupPlugin);
+        app.cleanup_plugins();
+        assert_eq!(*app.get_resource::<u8>().unwrap(), 77);
     }
 }
