@@ -9,9 +9,7 @@ pub mod plugin_group;
 pub mod resource;
 pub mod schedule;
 pub mod system;
-pub mod terrain;
 pub mod types;
-pub mod zone;
 
 // Re-export key items at crate root for ergonomics.
 pub use app::App;

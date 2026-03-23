@@ -11,8 +11,6 @@ use city_sim::tilemap::{TileKind, TileValue};
 use city_sim::types::{ZoneDensity, ZoneType};
 use city_sim::world::WorldState;
 
-use crate::plugins::terrain::TerrainPlugin;
-
 // ─── Tile → Pattern mapping ─────────────────────────────────────────────────
 
 /// Map a tile to its GPU pattern ID.
@@ -253,7 +251,6 @@ pub fn create_compact_engine() -> (SimulationEngine, MapSize) {
     let map_size = MapSize::new(64, 64);
 
     let mut app = App::new();
-    app.add_plugins(TerrainPlugin);
     app.add_plugins(SimCorePlugin::new(SimConfig {
         map_size,
         seed: 42,
