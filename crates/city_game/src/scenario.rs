@@ -8,6 +8,7 @@ use city_render::instance::GpuInstance;
 use city_render::renderer::{self, FrameData};
 use city_sim::plugin::{SimCorePlugin, SimConfig};
 use city_sim::tilemap::{TileKind, TileValue};
+use city_sim::render_bridge::pattern_id_for_tile;
 use city_sim::types::{ZoneDensity, ZoneType};
 use city_sim::world::WorldState;
 
@@ -15,31 +16,10 @@ use city_sim::world::WorldState;
 
 /// Map a tile to its GPU pattern ID.
 ///
-/// Pattern ID layout (matches TileVisualRegistry):
-///   0-4:   Terrain (Grass, Water, Sand, Forest, Rock)
-///   7:     Road
-///  11-16:  Zones (empty — Residential, Commercial, Industrial, Civic, Park, Transport)
-///  21-24:  Buildings (occupied — Residential, Commercial, Industrial, Civic)
+/// Delegates to `city_sim::render_bridge::pattern_id_for_tile` for
+/// compile-time exhaustive coverage of all TileKind and ZoneType variants.
 pub fn tile_to_pattern(tile: &TileValue) -> u32 {
-    match tile.kind {
-        TileKind::Road => 7,
-        TileKind::Building => match tile.zone {
-            ZoneType::Residential => 21,
-            ZoneType::Commercial  => 22,
-            ZoneType::Industrial  => 23,
-            ZoneType::Civic       => 24,
-            _ => 0,
-        },
-        _ => match tile.zone {
-            ZoneType::None        => 0,
-            ZoneType::Residential => 11,
-            ZoneType::Commercial  => 12,
-            ZoneType::Industrial  => 13,
-            ZoneType::Civic       => 14,
-            ZoneType::Park        => 15,
-            ZoneType::Transport   => 16,
-        },
-    }
+    pattern_id_for_tile(tile)
 }
 
 /// Build GPU instances from the current engine state.

@@ -15,3 +15,4 @@ pub mod plugin;
 pub mod systems;
 pub mod mapgen;
 pub mod loader;
+pub mod render_bridge;
