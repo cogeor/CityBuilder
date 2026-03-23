@@ -40,15 +40,17 @@ pub fn build_instances(engine: &SimulationEngine, max_dim: u16) -> Vec<GpuInstan
     renderer::build_terrain_instances(&tiles, max_dim)
 }
 
-/// Map archetype tag to sprite ID: 1=house, 2=shop, 3=factory, 4=civic.
+/// Map archetype to sprite ID using sprite_id field, falling back to tag-based mapping.
 fn archetype_to_sprite(registry: &ArchetypeRegistry, arch_id: u16) -> u32 {
     if let Some(def) = registry.get(arch_id) {
+        if def.sprite_id > 0 { return def.sprite_id; }
+        // fallback to tag-based mapping
         if def.has_tag(ArchetypeTag::Residential) { return 1; }
         if def.has_tag(ArchetypeTag::Commercial) { return 2; }
         if def.has_tag(ArchetypeTag::Industrial) { return 3; }
         if def.has_tag(ArchetypeTag::Civic) { return 4; }
     }
-    1 // fallback to house
+    1
 }
 
 /// Build complete frame data (terrain + sprites) from the current engine state.
@@ -95,6 +97,7 @@ pub fn register_fast_archetypes(registry: &mut ArchetypeRegistry) {
         prerequisites: vec![],
         workspace_per_job_m2: 0, living_space_per_person_m2: 40,
         effects: vec![],
+        sprite_id: 1,
     });
 
     registry.register(ArchetypeDefinition {
@@ -113,6 +116,7 @@ pub fn register_fast_archetypes(registry: &mut ArchetypeRegistry) {
         prerequisites: vec![],
         workspace_per_job_m2: 25, living_space_per_person_m2: 0,
         effects: vec![],
+        sprite_id: 2,
     });
 
     registry.register(ArchetypeDefinition {
@@ -131,6 +135,45 @@ pub fn register_fast_archetypes(registry: &mut ArchetypeRegistry) {
         prerequisites: vec![],
         workspace_per_job_m2: 50, living_space_per_person_m2: 0,
         effects: vec![],
+        sprite_id: 3,
+    });
+
+    registry.register(ArchetypeDefinition {
+        id: 7, name: "Hospital".into(),
+        tags: vec![ArchetypeTag::Service, ArchetypeTag::Civic],
+        footprint_w: 2, footprint_h: 2,
+        coverage_ratio_pct: 60, floors: 3, usable_ratio_pct: 75,
+        base_cost_cents: 50_000, base_upkeep_cents_per_tick: 5,
+        power_demand_kw: 50, power_supply_kw: 0,
+        water_demand: 20, water_supply: 0,
+        water_coverage_radius: 0, is_water_pipe: false,
+        service_radius: 10,
+        desirability_radius: 4, desirability_magnitude: 8,
+        pollution: 0, noise: 1,
+        build_time_ticks: 20, max_level: 5,
+        prerequisites: vec![],
+        workspace_per_job_m2: 20, living_space_per_person_m2: 0,
+        effects: vec![],
+        sprite_id: 4,
+    });
+
+    registry.register(ArchetypeDefinition {
+        id: 8, name: "School".into(),
+        tags: vec![ArchetypeTag::Service, ArchetypeTag::Civic],
+        footprint_w: 2, footprint_h: 2,
+        coverage_ratio_pct: 50, floors: 2, usable_ratio_pct: 80,
+        base_cost_cents: 30_000, base_upkeep_cents_per_tick: 3,
+        power_demand_kw: 20, power_supply_kw: 0,
+        water_demand: 10, water_supply: 0,
+        water_coverage_radius: 0, is_water_pipe: false,
+        service_radius: 8,
+        desirability_radius: 4, desirability_magnitude: 6,
+        pollution: 0, noise: 3,
+        build_time_ticks: 15, max_level: 4,
+        prerequisites: vec![],
+        workspace_per_job_m2: 30, living_space_per_person_m2: 0,
+        effects: vec![],
+        sprite_id: 4,
     });
 }
 

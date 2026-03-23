@@ -110,6 +110,9 @@ pub struct ArchetypeDefinition {
     /// Spatial effects emitted by this building.
     #[serde(default)]
     pub effects: Vec<Effect>,
+    /// Sprite atlas index for rendering this archetype.
+    #[serde(default)]
+    pub sprite_id: u32,
 }
 
 impl ArchetypeDefinition {
@@ -207,6 +210,7 @@ mod tests {
             workspace_per_job_m2: 0,
             living_space_per_person_m2: 40,
             effects: vec![],
+            sprite_id: 0,
         }
     }
 
@@ -230,6 +234,7 @@ mod tests {
             workspace_per_job_m2: 50,
             living_space_per_person_m2: 0,
             effects: vec![],
+            sprite_id: 0,
         }
     }
 
@@ -257,6 +262,7 @@ mod tests {
             workspace_per_job_m2: 25,
             living_space_per_person_m2: 0,
             effects: vec![],
+            sprite_id: 0,
         }
     }
 
