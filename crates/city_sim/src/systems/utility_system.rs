@@ -232,7 +232,8 @@ impl UtilitySystem for HealthCareSystem {
         let has_shortage = self.total_demand > self.total_beds;
 
         if has_shortage && !prev_shortage {
-            events.publish(tick, SimEvent::HealthCareShortage {
+            events.publish(tick, SimEvent::UtilityShortage {
+                kind: "healthcare".into(),
                 deficit: self.total_demand.saturating_sub(self.total_beds),
             });
         } else if !has_shortage && prev_shortage {

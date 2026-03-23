@@ -199,17 +199,12 @@ where
     let has_shortage = total_demand > total_supply;
     if has_shortage {
         let deficit = total_demand - total_supply;
-        match utility_type {
-            UtilityType::Power => {
-                events.publish(tick, SimEvent::PowerShortage { deficit_kw: deficit });
-            }
-            UtilityType::Water => {
-                events.publish(tick, SimEvent::WaterShortage { deficit });
-            }
-            UtilityType::HealthCare => {
-                events.publish(tick, SimEvent::HealthCareShortage { deficit });
-            }
-        }
+        let kind = match utility_type {
+            UtilityType::Power => "electricity",
+            UtilityType::Water => "water",
+            UtilityType::HealthCare => "healthcare",
+        };
+        events.publish(tick, SimEvent::UtilityShortage { kind: kind.into(), deficit });
     } else if prev_had_shortage {
         events.publish(tick, SimEvent::UtilityRestored { utility_type });
     }

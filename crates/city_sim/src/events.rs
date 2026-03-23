@@ -1,4 +1,5 @@
-use city_core::{ArchetypeId, EntityHandle, MoneyCents, Tick, TileCoord};
+use city_core::{ArchetypeId, EntityHandle, Tick, TileCoord};
+use crate::types::MoneyCents;
 use serde::{Deserialize, Serialize};
 
 /// Utility type for shortage/restoration events.
@@ -20,8 +21,7 @@ pub enum SimEvent {
     MigrationWave { incoming: i32 },
     UnemploymentHigh { rate_pct: u8 },
     LaborShortage { deficit: u32 },
-    PowerShortage { deficit_kw: u32 },
-    WaterShortage { deficit: u32 },
+    UtilityShortage { kind: String, deficit: u32 },
     UtilityRestored { utility_type: UtilityType },
     BudgetDeficit { amount_cents: MoneyCents },
     BudgetSurplus { amount_cents: MoneyCents },
@@ -33,7 +33,6 @@ pub enum SimEvent {
     TrafficJam { location: TileCoord, density: u16 },
     MilestoneReached { milestone_id: u16 },
     CommandRejected { reason: String },
-    HealthCareShortage { deficit: u32 },
 }
 
 /// Timestamped event wrapper.
@@ -114,7 +113,7 @@ mod tests {
         let mut bus = EventBus::new();
         bus.publish(1, SimEvent::PopulationChanged { old: 0, new: 10 });
         bus.publish(1, SimEvent::HousingShortage { deficit: 5 });
-        bus.publish(2, SimEvent::PowerShortage { deficit_kw: 100 });
+        bus.publish(2, SimEvent::UtilityShortage { kind: "electricity".into(), deficit: 100 });
         assert_eq!(bus.len(), 3);
         let events = bus.drain();
         assert_eq!(events.len(), 3);
@@ -163,7 +162,7 @@ mod tests {
     fn timestamped_event_tick_is_correct() {
         let mut bus = EventBus::new();
         bus.publish(42, sample_event());
-        bus.publish(99, SimEvent::WaterShortage { deficit: 10 });
+        bus.publish(99, SimEvent::UtilityShortage { kind: "water".into(), deficit: 10 });
         let events = bus.drain();
         assert_eq!(events[0].tick, 42);
         assert_eq!(events[1].tick, 99);
